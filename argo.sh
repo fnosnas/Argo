@@ -114,9 +114,84 @@ show_info() {
     echo -e "\n${CYAN}💡 v2rayN / Clash Meta / Shadowrocket 直接导入以上链接即可${NC}"
     if [[ "$TUNNEL_TYPE" == "fixed" ]]; then
         echo -e "${CYAN}💡 固定隧道：请确认 Cloudflare 面板里该隧道的 Public Hostname 已配置：${NC}"
-        echo -e "${CYAN}   域名 = ${ARGO_DOMAIN}   服务类型 = HTTP   URL = localhost:${XRAY_PORT}${NC}"
+        echo -e "${CYAN}   域名 = ${ARGO_DOMAIN}   服务类型 = HTTP   URL = 127.0.0.1:${XRAY_PORT}${NC}"
     fi
     echo -e "${GREEN}=============================================${NC}\n"
+}
+
+# 诊断：逐环检查 本机服务 -> Xray 端口 -> cloudflared 隧道 -> Cloudflare 公网访问
+diagnose() {
+    if [ ! -f "$INFO_FILE" ]; then
+        echo -e "${RED}❌ 未安装${NC}"; return 1
+    fi
+    load_info
+    echo -e "\n${GREEN}========== 链路诊断 ==========${NC}"
+
+    echo -e "${CYAN}[1] 服务运行状态${NC}"
+    local s st
+    for s in xray cloudflared; do
+        if [ "$OS" = "alpine" ]; then
+            rc-service "$s" status >/dev/null 2>&1 && st="运行中" || st="未运行"
+        else
+            systemctl is-active --quiet "$s" && st="运行中" || st="未运行"
+        fi
+        [[ "$st" == "运行中" ]] && echo -e "  ${GREEN}✅ $s: $st${NC}" || echo -e "  ${RED}❌ $s: $st${NC}"
+    done
+
+    echo -e "${CYAN}[2] Xray 端口 $XRAY_PORT 是否在监听${NC}"
+    if (ss -lnt 2>/dev/null || netstat -lnt 2>/dev/null) | grep -q ":$XRAY_PORT "; then
+        echo -e "  ${GREEN}✅ 正在监听${NC}"
+    else
+        echo -e "  ${RED}❌ 没有监听。Xray 配置有误或端口被占用，请运行: $XRAY_BIN run -c $XRAY_CONF${NC}"
+    fi
+
+    echo -e "${CYAN}[3] 本机直连 Xray${NC}"
+    local LOCAL_CODE CF_CODE
+    LOCAL_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://127.0.0.1:$XRAY_PORT/vless" 2>/dev/null)
+    if [[ "$LOCAL_CODE" == "000" || -z "$LOCAL_CODE" ]]; then
+        echo -e "  ${RED}❌ 连不上 Xray (返回 000)${NC}"
+    else
+        echo -e "  ${GREEN}✅ Xray 有响应 (HTTP $LOCAL_CODE，普通请求被拒绝属正常现象)${NC}"
+    fi
+
+    echo -e "${CYAN}[4] cloudflared 隧道连接情况${NC}"
+    if [ "$OS" != "alpine" ] && command -v journalctl >/dev/null 2>&1; then
+        local LOGS
+        LOGS=$(journalctl -u cloudflared --no-pager -n 40 2>/dev/null)
+        local REG
+        REG=$(echo "$LOGS" | grep -c "Registered tunnel connection")
+        if [[ "$REG" -gt 0 ]]; then
+            echo -e "  ${GREEN}✅ 已向 Cloudflare 注册 $REG 条隧道连接${NC}"
+        else
+            echo -e "  ${RED}❌ 日志中没有成功注册记录，最近的错误：${NC}"
+            echo "$LOGS" | grep -iE "err|fail|unauthorized|invalid" | tail -5 | sed 's/^/     /'
+        fi
+    else
+        tail -n 8 "$WORKDIR/argo.log" 2>/dev/null | sed 's/^/     /'
+    fi
+
+    echo -e "${CYAN}[5] 经 Cloudflare 公网访问 https://$ARGO_DOMAIN/vless${NC}"
+    CF_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://$ARGO_DOMAIN/vless" 2>/dev/null)
+    case "$CF_CODE" in
+        000|"")
+            echo -e "  ${RED}❌ 无法访问（域名解析失败/证书错误/超时）${NC}"
+            echo -e "  ${YELLOW}→ 检查域名 DNS 是否托管在 Cloudflare，且 $ARGO_DOMAIN 有指向隧道的 CNAME 记录（橙色云朵）${NC}" ;;
+        502|503)
+            echo -e "  ${RED}❌ HTTP $CF_CODE：Cloudflare 找到了隧道，但隧道连不上本机 Xray${NC}"
+            echo -e "  ${YELLOW}→ 面板 Public Hostname 的 Type 必须是 HTTP（不是 HTTPS），URL 必须是 127.0.0.1:$XRAY_PORT${NC}" ;;
+        530|1033)
+            echo -e "  ${RED}❌ HTTP $CF_CODE：隧道没有连上 Cloudflare${NC}"
+            echo -e "  ${YELLOW}→ 看上面第 [4] 项；Token 可能已失效/被重置，或 VPS 屏蔽了出站 7844 端口${NC}" ;;
+        *)
+            if [[ "$CF_CODE" == "$LOCAL_CODE" ]]; then
+                echo -e "  ${GREEN}✅ HTTP $CF_CODE，与本机 Xray 响应一致：服务端整条链路是通的！${NC}"
+                echo -e "  ${YELLOW}→ 若客户端仍不通，问题在客户端/本地网络（见下方提示）${NC}"
+            else
+                echo -e "  ${RED}❌ HTTP $CF_CODE，与本机 Xray 的 $LOCAL_CODE 不一致：请求没有到达你的 Xray${NC}"
+                echo -e "  ${YELLOW}→ 面板里没有给 $ARGO_DOMAIN 添加 Public Hostname，或绑定在了另一条隧道上${NC}"
+            fi ;;
+    esac
+    echo -e "${GREEN}==============================${NC}\n"
 }
 
 # 更改端口（本地Xray监听端口）
@@ -137,9 +212,9 @@ change_port() {
 
     if [ "$TUNNEL_TYPE" == "temp" ]; then
         if [ "$OS" = "alpine" ]; then
-            sed -i "s|localhost:$XRAY_PORT|localhost:$NEW_PORT|g" /etc/init.d/cloudflared
+            sed -i "s|127.0.0.1:$XRAY_PORT|127.0.0.1:$NEW_PORT|g" /etc/init.d/cloudflared
         else
-            sed -i "s|localhost:$XRAY_PORT|localhost:$NEW_PORT|g" /etc/systemd/system/cloudflared.service
+            sed -i "s|127.0.0.1:$XRAY_PORT|127.0.0.1:$NEW_PORT|g" /etc/systemd/system/cloudflared.service
             systemctl daemon-reload
         fi
     fi
@@ -155,7 +230,7 @@ change_port() {
         get_temp_domain
         sed -i "s|^ARGO_DOMAIN=.*|ARGO_DOMAIN=\"$DOMAIN\"|" "$INFO_FILE"
     else
-        echo -e "${YELLOW}⚠️  请到 Cloudflare 面板把 Public Hostname 的 URL 改为 localhost:$NEW_PORT，否则节点不通！${NC}"
+        echo -e "${YELLOW}⚠️  请到 Cloudflare 面板把 Public Hostname 的 URL 改为 127.0.0.1:$NEW_PORT，否则节点不通！${NC}"
     fi
     echo -e "${GREEN}✅ 端口已更改为 $NEW_PORT${NC}"
     show_info
@@ -256,7 +331,7 @@ register_services() {
     if [ "$TUNNEL_TYPE" == "fixed" ]; then
         ARGO_ARGS="tunnel --no-autoupdate --protocol http2 run --token $TUNNEL_TOKEN"
     else
-        ARGO_ARGS="tunnel --no-autoupdate --protocol http2 --url http://localhost:$XRAY_PORT --logfile $WORKDIR/argo.log"
+        ARGO_ARGS="tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:$XRAY_PORT --logfile $WORKDIR/argo.log"
     fi
 
     if [ "$OS" = "alpine" ]; then
@@ -474,6 +549,7 @@ while true; do
     echo "2. 查看信息"
     echo "3. 修改端口"
     echo "4. 卸载"
+    echo "5. 链路诊断"
     echo "0. 退出脚本"
     read -r -p "选择: " choice
     case $choice in
@@ -481,6 +557,7 @@ while true; do
         2) show_info      ; pause_return ;;
         3) change_port    ; pause_return ;;
         4) uninstall_argo ; pause_return ;;
+        5) diagnose       ; pause_return ;;
         0) echo -e "${GREEN}已退出脚本${NC}"; exit 0 ;;
         *) echo -e "${RED}无效选择${NC}"; pause_return ;;
     esac
