@@ -1,4 +1,12 @@
-#!/usr/bin/env bash
+#!/bin/sh
+# 兼容入口：Alpine 默认没有 bash，这里先装好 bash 再用 bash 重新执行本脚本
+if [ -z "$BASH_VERSION" ]; then
+    if ! command -v bash >/dev/null 2>&1 && command -v apk >/dev/null 2>&1; then
+        apk add --no-cache bash >/dev/null 2>&1
+    fi
+    command -v bash >/dev/null 2>&1 || { echo "❌ 需要 bash，请先安装: apk add bash 或 apt install bash"; exit 1; }
+    exec bash "$0" "$@"
+fi
 # Argo 隧道管理脚本（修复版）
 # 注意：不使用 set -e —— 这是交互式菜单脚本，任何一个命令失败都不应该把整个脚本带崩
 
@@ -9,6 +17,7 @@ XRAY_BIN="/usr/local/bin/xray"
 ARGO_BIN="/usr/local/bin/cloudflared"
 XRAY_CONF="$WORKDIR/config.json"
 INFO_FILE="$WORKDIR/info.txt"
+TMPD="$WORKDIR/tmp"   # 下载临时目录：放磁盘，不用 /tmp(可能是 tmpfs 内存盘)
 ### =====================
 
 GREEN='\e[32m'
@@ -56,7 +65,7 @@ restart_service() { svc restart xray; svc restart cloudflared; }
 # 安装依赖
 install_deps() {
     if [ "$OS" = "alpine" ]; then
-        apk add --no-cache curl openssl ca-certificates bash unzip wget jq coreutils 2>/dev/null || true
+        apk add --no-cache curl openssl ca-certificates bash unzip wget jq 2>/dev/null || true
     else
         apt-get update -qq
         apt-get install -y -qq curl openssl ca-certificates unzip wget jq 2>/dev/null || true
@@ -83,7 +92,19 @@ normalize_domain() {
 valid_port() { [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
 
 # 读取 info 文件（所有值都带引号写入，source 不会再把空格当命令）
-load_info() { [ -f "$INFO_FILE" ] && . "$INFO_FILE"; }
+load_info() {
+    [ -f "$INFO_FILE" ] || return 1
+    . "$INFO_FILE"
+    # 临时隧道：cloudflared 每次重启(含自动保活重启)域名都会变，这里始终取日志里最新的一个
+    if [ "$TUNNEL_TYPE" = "temp" ]; then
+        local NEWD
+        NEWD=$(grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' "$WORKDIR/argo.log" 2>/dev/null | sed 's#https://##' | tail -1)
+        if [ -n "$NEWD" ] && [ "$NEWD" != "$ARGO_DOMAIN" ]; then
+            ARGO_DOMAIN="$NEWD"
+            sed -i "s|^ARGO_DOMAIN=.*|ARGO_DOMAIN=\"$NEWD\"|" "$INFO_FILE"
+        fi
+    fi
+}
 
 # 获取公网IP
 get_ip() {
@@ -246,6 +267,7 @@ install_xray() {
     fi
     echo -e "${GREEN}✅ 最新版本: $XRAY_VER${NC}"
 
+    mkdir -p "$TMPD"
     local XRAY_ZIP="Xray-linux-${ARCH_XRAY}.zip"
     local DOWNLOAD_URL="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/${XRAY_ZIP}"
     local DGST_URL="${DOWNLOAD_URL}.dgst"
@@ -255,23 +277,23 @@ install_xray() {
     for attempt in 1 2 3; do
         [[ $attempt -gt 1 ]] && echo -e "${YELLOW}   ⚠️ 第 $attempt 次尝试...${NC}"
 
-        if ! curl -4 -Lfs --retry 2 --retry-delay 2 --connect-timeout 10 -o /tmp/xray.zip "$DOWNLOAD_URL"; then
+        if ! curl -4 -Lfs --retry 2 --retry-delay 2 --connect-timeout 10 -o $TMPD/xray.zip "$DOWNLOAD_URL"; then
             echo -e "${YELLOW}   ⚠️ 下载请求失败，重试${NC}"
-            rm -f /tmp/xray.zip; continue
+            rm -f $TMPD/xray.zip; continue
         fi
-        if ! unzip -tq /tmp/xray.zip >/dev/null 2>&1; then
+        if ! unzip -tq $TMPD/xray.zip >/dev/null 2>&1; then
             echo -e "${YELLOW}   ⚠️ 下载内容不是有效 zip，重试${NC}"
-            rm -f /tmp/xray.zip; continue
+            rm -f $TMPD/xray.zip; continue
         fi
 
         # 修复：.dgst 是 GitHub 302 重定向资源，必须加 -L；且字段名是 SHA2-256= 而不是 SHA256=
         local EXPECTED ACTUAL
         EXPECTED=$(curl -4 -sfL "$DGST_URL" 2>/dev/null | tr -d '\r' | grep -iE '^SHA2?-?256=' | head -1 | sed 's/^[^=]*=[[:space:]]*//')
         if [[ -n "$EXPECTED" ]]; then
-            ACTUAL=$(sha256sum /tmp/xray.zip | awk '{print $1}')
+            ACTUAL=$(sha256sum $TMPD/xray.zip | awk '{print $1}')
             if [[ "${EXPECTED,,}" != "${ACTUAL,,}" ]]; then
                 echo -e "${YELLOW}   ⚠️ SHA256 校验不一致，重试${NC}"
-                rm -f /tmp/xray.zip; continue
+                rm -f $TMPD/xray.zip; continue
             fi
             echo -e "${GREEN}   ✅ SHA256 校验通过${NC}"
         else
@@ -285,19 +307,20 @@ install_xray() {
         return 1
     fi
 
-    rm -rf /tmp/xray_unz && mkdir -p /tmp/xray_unz
-    unzip -oq /tmp/xray.zip xray -d /tmp/xray_unz || { echo -e "${RED}❌ 解压失败${NC}"; return 1; }
+    rm -rf "$TMPD/xray_unz" && mkdir -p "$TMPD/xray_unz"
+    unzip -oq $TMPD/xray.zip xray -d $TMPD/xray_unz || { echo -e "${RED}❌ 解压失败${NC}"; return 1; }
     rm -f "$XRAY_BIN"                      # 先删除再放入，避免 "Text file busy"
-    mv -f /tmp/xray_unz/xray "$XRAY_BIN"
+    mv -f $TMPD/xray_unz/xray "$XRAY_BIN"
     chmod +x "$XRAY_BIN"
-    rm -rf /tmp/xray.zip /tmp/xray_unz
+    rm -rf "$TMPD"
 }
 
 # 安装 cloudflared
 install_cloudflared() {
     echo -e "${CYAN}⬇️  正在下载 cloudflared...${NC}"
     local CF_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${ARCH_ARGO}"
-    local TMP_CF="/tmp/cloudflared.new"
+    mkdir -p "$TMPD"
+    local TMP_CF="$TMPD/cloudflared.new"
     local OK="" attempt
 
     for attempt in 1 2 3; do
@@ -338,6 +361,7 @@ register_services() {
         cat > /etc/init.d/xray <<EOF
 #!/sbin/openrc-run
 name="xray"
+export GOGC=50 GOMEMLIMIT=48MiB
 command="$XRAY_BIN"
 command_args="run -c $XRAY_CONF"
 command_background=true
@@ -348,6 +372,7 @@ EOF
         cat > /etc/init.d/cloudflared <<EOF
 #!/sbin/openrc-run
 name="cloudflared"
+export GOGC=50 GOMEMLIMIT=64MiB
 command="$ARGO_BIN"
 command_args="$ARGO_ARGS"
 command_background=true
@@ -365,6 +390,8 @@ Description=Xray Core
 After=network.target
 
 [Service]
+Environment=GOGC=50
+Environment=GOMEMLIMIT=48MiB
 ExecStart=$XRAY_BIN run -c $XRAY_CONF
 Restart=always
 RestartSec=5
@@ -378,6 +405,8 @@ Description=Cloudflare Argo Tunnel
 After=network.target
 
 [Service]
+Environment=GOGC=50
+Environment=GOMEMLIMIT=64MiB
 ExecStart=$ARGO_BIN $ARGO_ARGS
 Restart=always
 RestartSec=5
@@ -397,7 +426,7 @@ get_temp_domain() {
     local i
     for i in $(seq 1 30); do
         sleep 2
-        DOMAIN=$(grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' "$WORKDIR/argo.log" 2>/dev/null | sed 's#https://##' | head -1)
+        DOMAIN=$(grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' "$WORKDIR/argo.log" 2>/dev/null | sed 's#https://##' | tail -1)
         if [[ -n "$DOMAIN" ]]; then
             echo -e "${GREEN}✅ 临时域名: $DOMAIN${NC}"
             return 0
