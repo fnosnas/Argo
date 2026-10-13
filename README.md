@@ -8,6 +8,11 @@ bash <(curl -fsSL ae86.ccwu.cc/argo)
 ```
 bash <(curl -fsSL https://raw.githubusercontent.com/fnosnas/Argo/main/argo.sh)
 ```
+sing-box-Tuic (自签证书SHA256指纹)  
+```
+bash <(curl -fsSL ae86.ccwu.cc/boxTuic)
+```
+
 tuic (自签证书SHA256指纹)
 ```
 bash <(curl -fsSL ae86.ccwu.cc/Tuic)
