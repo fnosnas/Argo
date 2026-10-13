@@ -13,7 +13,7 @@ sing-box-Tuic (证书SHA256指纹.带链路诊断)
 bash <(curl -fsSL ae86.ccwu.cc/boxTuic)
 ```
 
-tuic (证书SHA256指纹)
+tuic 
 ```
 bash <(curl -fsSL ae86.ccwu.cc/Tuic)
 ```
@@ -27,8 +27,8 @@ bash <(curl -fsSL ae86.ccwu.cc/vless)
 ```
 bash <(curl -fsSL https://raw.githubusercontent.com/fnosnas/Argo/main/vless.sh)
 ```
-HY2 (证书SHA256指纹)
-```bash
+HY2 
+```
 bash <(curl -fsSL https://raw.githubusercontent.com/fnosnas/Argo/main/hy2.sh)
 ```
 Socks5 (无认证/有认证)
