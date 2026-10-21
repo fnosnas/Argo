@@ -2,6 +2,7 @@
 # aimili-lite 一键安装：VPNGate(OpenVPN) 出口  ->  Xray VLESS+WS+TLS 入口  ->  一条订阅链接
 #
 # 用法（root）：
+#   DOMAIN=你的域名 bash <(curl -Ls https://raw.githubusercontent.com/fnosnas/Argo/main/Free%20widening/install.sh)
 #   bash install.sh                         # 无域名：自签证书，客户端需“允许不安全”(脚本已写进链接)
 #   DOMAIN=vpn.example.com bash install.sh  # 有域名(A记录指向本机，若走CF小云朵也可)：自动申请证书
 #   MAX_NODES=50 bash install.sh            # 最多同时保持多少个节点(默认30)
@@ -55,7 +56,14 @@ fi
 command -v openvpn >/dev/null || { echo -e "${R}openvpn 安装失败${N}"; exit 1; }
 
 mkdir -p "$BASE"/{bin,run,web}
-cp "$SRC_DIR/manager.py" "$BASE/manager.py"
+# 本地有 manager.py 就用本地的；通过 bash <(curl ...) 运行时则从仓库下载
+RAW_BASE="${RAW_BASE:-https://raw.githubusercontent.com/fnosnas/Argo/main/Free%20widening}"
+if [ -f "$SRC_DIR/manager.py" ]; then
+  cp "$SRC_DIR/manager.py" "$BASE/manager.py"
+else
+  curl -fsSL "$RAW_BASE/manager.py" -o "$BASE/manager.py" || { echo -e "${R}下载 manager.py 失败：$RAW_BASE/manager.py${N}"; exit 1; }
+fi
+python3 -m py_compile "$BASE/manager.py" || { echo -e "${R}manager.py 校验失败${N}"; exit 1; }
 
 # ---------------------------------------------------------------- 下载 xray / caddy
 echo -e "${Y}[2/6] 下载 Xray 与 Caddy${N}"
