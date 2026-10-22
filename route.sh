@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# VPS 路由追踪与线路检测一键脚本 (带清晰中文总结表格)
+# VPS 路由追踪与线路检测一键脚本 (稳定修复版)
 # 
 
 # 确保以 root 权限运行
@@ -26,23 +26,23 @@ install_deps() {
     fi
 }
 
-# 智能分析单行跳数并判断线路类型
-analyze_hop() {
-    local line="$1"
-    if echo "$line" | grep -qE "59.43\."; then
-        echo -e "${GREEN}电信 CN2 GIA (精品线路)${PLAIN}"
-    elif echo "$line" | grep -qE "10099\."; then
-        echo -e "${GREEN}联通 AS9929 (精品线路)${PLAIN}"
-    elif echo "$line" | grep -qE "4837\."; then
-        echo -e "${CYAN}联通 AS4837 (优质线路)${PLAIN}"
-    elif echo "$line" | grep -qE "58.245\.|cmi"; then
-        echo -e "${GREEN}移动 CMI (精品线路)${PLAIN}"
-    elif echo "$line" | grep -qE "202.97\."; then
-        echo -e "${YELLOW}电信 163骨干网 (普通线路)${PLAIN}"
-    elif echo "$line" | grep -qE "ntt|pccw|telia|cogentco"; then
-        echo -e "${RED}国际杂牌/绕路 (普通线路)${PLAIN}"
+# 智能分析线路类型
+analyze_route_type() {
+    local text="$1"
+    if echo "$text" | grep -qE "59.43\."; then
+        echo "电信 CN2 GIA (精品)"
+    elif echo "$text" | grep -qE "10099\."; then
+        echo "联通 AS9929 (精品)"
+    elif echo "$text" | grep -qE "4837\."; then
+        echo "联通 AS4837 (优质)"
+    elif echo "$text" | grep -qE "58.245\.|cmi"; then
+        echo "移动 CMI (精品)"
+    elif echo "$text" | grep -qE "202.97\."; then
+        echo "电信 163 (普通)"
+    elif echo "$text" | grep -qE "ntt|pccw|telia|cogentco"; then
+        echo "国际杂牌/绕路"
     else
-        echo -e "普通/直连"
+        echo "直连/普通"
     fi
 }
 
@@ -54,46 +54,52 @@ run_trace_with_summary() {
     echo -e "\n${BLUE}正在测试到 【${target_name}】 (${target_ip}) 的路由...${PLAIN}"
     echo -e "${CYAN}--------------------------------------------------------------------------------${PLAIN}"
     
-    # 临时文件保存输出
     local tmp_file="/tmp/nxtrace_out_$$.txt"
     
-    # 运行 NextTrace 并将结果输出到屏幕和临时文件
-    nexttrace --lang cn "$target_ip" | tee "$tmp_file"
+    # 纯净运行 NextTrace，不加多余参数，确保 100% 成功
+    nexttrace "$target_ip" | tee "$tmp_file"
     
     echo -e "\n${CYAN}================================================================================${PLAIN}"
     echo -e "${GREEN}【${target_name}】 路由简化总结报告：${PLAIN}"
     echo -e "${CYAN}================================================================================${PLAIN}"
-    printf "%-6s | %-25s | %-20s | %-20s\n" "跳数" "节点位置/国家" "IP地址" "线路评估"
+    printf "%-6s | %-25s | %-20s | %-22s\n" "跳数" "节点位置/国家" "IP地址" "线路评估"
     echo -e "--------------------------------------------------------------------------------"
 
+    # 逐行读取并清洗打印
     while IFS=read -r line; do
-        # 提取包含 IP 和地理位置的行
+        # 筛选包含IP地址的有效路由行
         if echo "$line" | grep -qE "([0-9]{1,3}\.){3}[0-9]{1,3}"; then
-            # 简单清洗并提取关键字段
-            local hop_num=$(echo "$line" | awk '{print $1}')
-            local ip_addr=$(echo "$line" | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}" | head -n 1)
-            
-            # 判断线路
-            local route_type=$(analyze_hop "$line")
-            
-            # 提取城市/国家特征
+            # 提取跳数 (行首数字)
+            local hop_num
+            hop_num=$(echo "$line" | awk '{print $1}' | tr -cd '0-9')
+            [[ -z "$hop_num" ]] && hop_num="-"
+
+            # 提取IP地址
+            local ip_addr
+            ip_addr=$(echo "$line" | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}" | head -n 1)
+
+            # 评估线路
+            local route_type
+            route_type=$(analyze_route_type "$line")
+
+            # 提取地理位置粗略判断
             local loc="未知地区"
             if echo "$line" | grep -qE "Hong Kong|香港"; then
                 loc="中国香港"
             elif echo "$line" | grep -qE "Singapore|新加坡"; then
                 loc="新加坡"
             elif echo "$line" | grep -qE "United States|美国|Los Angeles|San Jose"; then
-                loc="美国 (可能绕路)"
+                loc="美国 (绕路)"
             elif echo "$line" | grep -qE "Japan|日本|Tokyo|Osaka"; then
                 loc="日本"
-            elif echo "$line" | grep -qE "China|中国|Shanghai|Guangzhou|Beijing"; then
+            elif echo "$line" | grep -qE "China|中国|Shanghai|Guangzhou|Beijing|Shenzhen"; then
                 loc="中国大陆节点"
             else
                 loc="国际中转节点"
             fi
 
             if [[ -n "$ip_addr" ]]; then
-                printf "%-6s | %-25s | %-20s | %-20s\n" "$hop_num" "$loc" "$ip_addr" "$route_type"
+                printf "%-6s | %-25s | %-20s | %-22s\n" "$hop_num" "$loc" "$ip_addr" "$route_type"
             fi
         fi
     done < "$tmp_file"
