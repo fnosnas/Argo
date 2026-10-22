@@ -10,10 +10,18 @@
 DOMAIN=你的域名 bash <(curl -Ls "https://raw.githubusercontent.com/fnosnas/Argo/main/Free%20widening/install.sh")
 ```
 "看进度:      
-```journalctl -u aimili-lite -f```"
+```
+journalctl -u aimili-lite -f
+```
 "节点清单:   
-```cat $BASE/nodes.json```"
+```
+cat $BASE/nodes.json
+```
 "再看链接:    
-```cat $BASE/订阅链接.txt```"
+```
+cat $BASE/订阅链接.txt
+```
 "卸载:   
-```bash install.sh uninstall```"
+```
+bash install.sh uninstall
+```
