@@ -340,7 +340,9 @@ print_summary() { # 标题
   echo " 1) 精品=CN2 GIA / 联通9929、10099 / 移动CMIN2；其余(含CN2 GT)按普通处理。"
   echo " 2) 评价只按延迟估计(<100优秀 <180良好 <250一般 其余偏高)，请结合VPS所在地判断是否绕路。"
   echo " 3) 国家/城市来自IP库，骨干网设备的位置偶尔不准，以延迟和ASN为主。"
-  echo " 4) 路径里出现 Cloudflare(AS13335) 说明这台机器的出口经过了Cloudflare网络，测到的是该出口线路。"
+  if [[ "$MYISP" == *Cloudflare* ]]; then
+    echo " 4) 这台机器IPv4出口属于Cloudflare，测到的是Cloudflare出口线路。"
+  fi
 }
 
 # ---------------- 2. 回程 ----------------
@@ -348,10 +350,18 @@ trace_one() { # 名称 isp 目标
   local name="$1" isp="$2" target="$3" reached=0
   echo
   echo "${B}━━━ 回程: $name ($target) ━━━${N}"
-  "$NT" -q 1 -m 30 -g cn "$target" 2>/dev/null | parse_text > "$WORK/t.tsv"
+  if [[ "$target" == *:* && -z "$MYIP6" ]]; then
+    echo "${R}这台VPS没有可用的IPv6，无法测到IPv6目标。${N}"
+    echo "请改输入你的IPv4地址，或直接回车测三网九节点。"
+    add_fail "$name" "$(start_desc "$target")"
+    return
+  fi
+  "$NT" -q 1 -m 30 -g cn "$target" > "$WORK/raw.txt" 2>&1
+  parse_text < "$WORK/raw.txt" > "$WORK/t.tsv"
 
   if [[ ! -s "$WORK/t.tsv" ]]; then
-    echo "${R}追踪失败（可能需要root权限，或网络不通）${N}"
+    echo "${R}追踪失败，NextTrace 返回的信息如下:${N}"
+    sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$WORK/raw.txt" | head -n 8
     add_fail "$name" "$(start_desc "$target")"
     return
   fi
