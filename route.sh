@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# VPS 路由追踪与线路检测一键脚本 (修复版)
+# VPS 路由追踪与线路检测一键脚本 (漫游复盘升级版)
 # 
 
 # 确保以 root 权限运行
@@ -26,28 +26,8 @@ install_deps() {
     fi
 }
 
-# 智能分析线路类型
-analyze_route_type() {
-    local text="$1"
-    if echo "$text" | grep -qE "59.43\."; then
-        echo "电信 CN2 GIA (精品)"
-    elif echo "$text" | grep -qE "10099\."; then
-        echo "联通 AS9929 (精品)"
-    elif echo "$text" | grep -qE "4837\."; then
-        echo "联通 AS4837 (优质)"
-    elif echo "$text" | grep -qE "58.245\.|cmi"; then
-        echo "移动 CMI (精品)"
-    elif echo "$text" | grep -qE "202.97\."; then
-        echo "电信 163 (普通)"
-    elif echo "$text" | grep -qE "ntt|pccw|telia|cogentco|arelion"; then
-        echo "国际杂牌/绕路"
-    else
-        echo "直连/普通"
-    fi
-}
-
-# 核心函数：运行测试并生成精简中文表格
-run_trace_with_summary() {
+# 核心函数：运行测试并生成清晰的 chronoligal 漫游复盘报告
+run_trace_with_clean_report() {
     local target_ip="$1"
     local target_name="$2"
     
@@ -56,50 +36,82 @@ run_trace_with_summary() {
     
     local tmp_file="/tmp/nxtrace_out_$$.txt"
     
-    # 运行 NextTrace 并将屏幕输出重定向到临时文件
+    # 运行 NextTrace 并将输出保存到临时文件
     nexttrace "$target_ip" | tee "$tmp_file"
     
     echo -e "\n${CYAN}================================================================================${PLAIN}"
-    echo -e "${GREEN}【${target_name}】 路由简化总结报告：${PLAIN}"
+    echo -e "${GREEN}【${target_name}】 详细链路漫游复盘报告${PLAIN}"
     echo -e "${CYAN}================================================================================${PLAIN}"
-    printf "%-6s | %-25s | %-20s | %-22s\n" "跳数" "节点位置/国家" "IP地址" "线路评估"
-    echo -e "--------------------------------------------------------------------------------"
-
-    # 逐行读取并清洗打印 (注意这里修复了 IFS= 与 read 之间的空格)
+    
+    local has_繞美=0
+    local hop_count=0
+    
+    # 逐行安全读取
     while IFS= read -r line; do
-        if echo "$line" | grep -qE "([0-9]{1,3}\.){3}[0-9]{1,3}"; then
+        # 匹配 NextTrace 输出的每一跳行 (例如: "2   104.28.0.0      AS13335  [CLOUDFLARENET]  美国 佐治亚州 亚特兰大")
+        if echo "$line" | grep -qE "^[[:space:]]*[0-9]+[[:space:]]+([0-9]{1,3}\.){3}[0-9]{1,3}"; then
+            hop_count=$((hop_count + 1))
+            
+            # 提取跳数
             local hop_num
-            hop_num=$(echo "$line" | awk '{print $1}' | tr -cd '0-9')
-            [[ -z "$hop_num" ]] && hop_num="-"
-
+            hop_num=$(echo "$line" | awk '{print $1}')
+            
+            # 提取 IP 地址
             local ip_addr
             ip_addr=$(echo "$line" | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}" | head -n 1)
-
-            local route_type
-            route_type=$(analyze_route_type "$line")
-
+            
+            # 判断地理位置
             local loc="未知地区"
-            if echo "$line" | grep -qE "Hong Kong|香港"; then
+            if echo "$line" | grep -qE "香港|Hong Kong"; then
                 loc="中国香港"
-            elif echo "$line" | grep -qE "Singapore|新加坡"; then
+            elif echo "$line" | grep -qE "新加坡|Singapore"; then
                 loc="新加坡"
-            elif echo "$line" | grep -qE "United States|美国|Los Angeles|San Jose|Miami|Dallas|Atlanta"; then
-                loc="美国 (严重绕路)"
-            elif echo "$line" | grep -qE "Japan|日本|Tokyo|Osaka"; then
+            elif echo "$line" | grep -qE "美国|Los Angeles|San Jose|Miami|Dallas|Atlanta|Georgia|Florida"; then
+                loc="美国 (跨洲绕路)"
+                has_繞美=1
+            elif echo "$line" | grep -qE "日本|Tokyo|Osaka"; then
                 loc="日本"
-            elif echo "$line" | grep -qE "China|中国|Shanghai|Guangzhou|Beijing|Shenzhen"; then
+            elif echo "$line" | grep -qE "中国|上海|广州|北京|深圳"; then
                 loc="中国大陆节点"
             else
                 loc="国际中转节点"
             fi
-
-            if [[ -n "$ip_addr" ]]; then
-                printf "%-6s | %-25s | %-20s | %-22s\n" "$hop_num" "$loc" "$ip_addr" "$route_type"
+            
+            # 识别线路/运营商属性
+            local line_eval="普通/直连线路"
+            if echo "$line" | grep -qE "59.43\."; then
+                line_eval="电信 CN2 GIA (🔥 精品线路)"
+            elif echo "$line" | grep -qE "10099\."; then
+                line_eval="联通 AS9929 (🔥 精品线路)"
+            elif echo "$line" | grep -qE "4837\."; then
+                line_eval="联通 AS4837 (⭐ 优质线路)"
+            elif echo "$line" | grep -qE "58.245\.|cmi"; then
+                line_eval="移动 CMI (🔥 精品线路)"
+            elif echo "$line" | grep -qE "202.97\."; then
+                line_eval="电信 163 骨干网 (⚠️ 普通拥堵)"
+            elif echo "$line" | grep -qE "ntt|pccw|telia|arelion|cogentco"; then
+                line_eval="国际杂牌转运 (❌ 垃圾线路)"
             fi
+            
+            # 打印格式化的单跳详情
+            echo -e "${YELLOW}[第 ${hop_num} 跳]${PLAIN} IP: ${CYAN}${ip_addr}${PLAIN}"
+            echo -e "         ├─ 地理位置: ${loc}"
+            echo -e "         └─ 节点属性: ${line_eval}"
+            echo -e "--------------------------------------------------------------------------------"
         fi
     done < "$tmp_file"
     
+    # 给出最终的链路健康诊断
+    echo -e "\n${GREEN}【诊断总结报告】${PLAIN}"
+    if [ $has_繞美 -eq 1 ]; then
+        echo -e "  ❌ ${RED}确诊：您的 VPS 正在严重绕路！${PLAIN}"
+        echo -e "  📖 轨迹复盘：数据包从 VPS 出发后，未直接连向中国，而是被送往了【美国】等欧美节点，绕了大半个地球才折返国内。"
+        echo -e "  💡 体验影响：由于跨洲传输，物理延迟必然飙升（通常在 250ms - 350ms 之间），导致本地用代理时极度卡顿。"
+    else
+        echo -e "  ✔ ${GREEN}状态良好：该线路没有发现明显的跨洲绕路现象，属于直连或区域优化路线。${PLAIN}"
+    fi
     echo -e "${CYAN}================================================================================${PLAIN}"
+    
     rm -f "$tmp_file"
 }
 
@@ -110,16 +122,16 @@ check_going() {
     local vps_ip
     vps_ip=$(curl -s ip.sb)
     echo -e "当前 VPS 的公网 IP: ${CYAN}$vps_ip${PLAIN}"
-    run_trace_with_summary "$vps_ip" "综合去程测速"
+    run_trace_with_clean_report "$vps_ip" "综合去程测速"
 }
 
 # 2. 测回程线路 (VPS -> 国内)
 check_return() {
     install_deps || return
     echo -e "\n${BLUE}=== 开始检测回程线路 (本 VPS -> 国内三大运营商) ===${PLAIN}"
-    run_trace_with_summary "202.96.209.133" "电信 (上海)"
-    run_trace_with_summary "210.22.84.3" "联通 (上海)"
-    run_trace_with_summary "211.136.192.6" "移动 (上海)"
+    run_trace_with_clean_report "202.96.209.133" "电信 (上海)"
+    run_trace_with_clean_report "210.22.84.3" "联通 (上海)"
+    run_trace_with_clean_report "211.136.192.6" "移动 (上海)"
 }
 
 # 3. 清理并卸载脚本产生的所有内容
@@ -145,12 +157,12 @@ main_menu() {
         clear
         echo -e "=================================================="
         echo -e "          VPS 路由线路检测与评测工具箱            "
-        echo -e "================================================== "
+        echo -e "=================================================="
         echo -e " ${GREEN}1.${PLAIN} 检测去程线路 (国内 -> VPS)"
         echo -e " ${GREEN}2.${PLAIN} 检测回程线路 (VPS -> 国内三大运营商)"
         echo -e " ${GREEN}3.${PLAIN} 一键卸载/彻底清理所有安装和缓存内容"
         echo -e " ${RED}0.${PLAIN} 退出脚本"
-        echo -e "=================================================="
+        echo -e "================================================== "
         read -p "请输入选项 [0-3]: " choice
         
         case "$choice" in
