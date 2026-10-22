@@ -6,7 +6,7 @@
 # ============================================================
 
 export LC_ALL=C.UTF-8 2>/dev/null
-[[ -t 0 ]] || exec < /dev/tty
+[[ -n "$ROUTE_TEST" || -t 0 ]] || exec < /dev/tty
 
 WORK="/tmp/.routecheck"
 NT="$WORK/nexttrace"
@@ -105,6 +105,18 @@ tag_asn() {
     58453) echo "移动CMI" ;;
     9808)  echo "移动骨干" ;;
     4538)  echo "教育网" ;;
+    4812)  echo "电信上海" ;;
+    17621) echo "联通上海" ;;
+    4808)  echo "联通北京" ;;
+    56040) echo "移动广东" ;;
+    13335) echo "Cloudflare" ;;
+    1299)  echo "Arelion" ;;
+    3356)  echo "Lumen" ;;
+    174)   echo "Cogent" ;;
+    2914)  echo "NTT" ;;
+    3257)  echo "GTT" ;;
+    6453)  echo "TATA" ;;
+    5511)  echo "Orange" ;;
     *)     echo "" ;;
   esac
 }
@@ -140,24 +152,55 @@ classify() {
       return
     fi
     if has_asn 23764; then LINE="电信 CTGNet"; GRADE="普通"; return; fi
-    if has_asn 4134; then LINE="电信 163骨干"; GRADE="普通"; return; fi
+    if has_asn 4134 || has_asn 4812; then LINE="电信 163骨干"; GRADE="普通"; return; fi
   fi
   if [[ "$isp" == "联通" || "$isp" == "任意" ]]; then
-    if has_asn 4837; then LINE="联通 169骨干"; GRADE="普通"; return; fi
+    if has_asn 4837 || has_asn 17621 || has_asn 4808; then LINE="联通 169骨干/省网"; GRADE="普通"; return; fi
   fi
   if [[ "$isp" == "移动" || "$isp" == "任意" ]]; then
     if has_asn 58453; then LINE="移动 CMI"; GRADE="普通"; return; fi
-    if has_asn 9808; then LINE="移动 CMNET骨干"; GRADE="普通"; return; fi
+    if has_asn 9808 || has_asn 56040; then LINE="移动 CMNET骨干"; GRADE="普通"; return; fi
   fi
 }
 
 # ---------------- 逐跳分析 ----------------
-# 输入 tsv: ttl|ip|asn|国家|省|城市|owner|rtt
+is_private() {
+  case "$1" in
+    10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*|100.6[4-9].*|100.[7-9][0-9].*|100.1[01][0-9].*|100.12[0-7].*) return 0 ;;
+  esac
+  return 1
+}
+
+# 把 NextTrace 文本输出转成 tsv: ttl|ip|asn|国家|省|城市|owner|rtt
+parse_text() {
+  tr -d '\r' | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' | LC_ALL=C awk '
+  function flush() {
+    if (ttl != "") printf "%s|%s|%s|%s|%s|%s||%s\n", ttl, ip, asn, c1, c2, c3, rtt
+  }
+  /^[0-9]+[ \t]+/ {
+    flush()
+    ttl = $1; ip = $2; asn = ""; c1 = ""; c2 = ""; c3 = ""; rtt = "0"; n = 0
+    for (i = 3; i <= NF; i++) {
+      t = $i
+      if (t ~ /^AS[0-9]+$/) { asn = substr(t, 3); continue }
+      if (t ~ /^\[.*\]$/ || t == "*" || t == "RFC1918") continue
+      if (t !~ /[ -~]/) {
+        n++
+        if (n == 1) c1 = t; else if (n == 2) c2 = t; else if (n == 3) c3 = t
+      } else if (n > 0) break
+    }
+    next
+  }
+  ttl != "" && rtt == "0" && match($0, /[0-9]+\.[0-9]+ ms/) { rtt = substr($0, RSTART, RLENGTH - 3) }
+  END { flush() }'
+}
+
 analyze() {
   local f="$1" show="$2"
   P_ASNS=""; P_COUNTRIES=""; P_PATH=""; P_RTT="-"; P_GT=0
-  local lastc="" lastasn="" lastseg="" idx=0 first202=0 first5943=0
-  local ttl ip asn country prov city owner rtt tag seg place
+  P_ENTRY="未进入中国网络"; P_LASTIP=""
+  local lastc="" lastasn="" lastseg="" idx=0 first202=0 first5943=0 entry_set=0
+  local ttl ip asn country prov city owner rtt tag seg place mark
 
   while IFS='|' read -r ttl ip asn country prov city owner rtt; do
     idx=$((idx + 1))
@@ -165,72 +208,84 @@ analyze() {
       [[ "$show" == "1" ]] && printf ' %2s  %s\n' "$ttl" "${Y}*  请求超时(该路由器不回应)${N}"
       continue
     fi
+    P_LASTIP="$ip"
+    if is_private "$ip"; then
+      [[ "$show" == "1" ]] && printf ' %2s  %-16s %s  %s ms\n' "$ttl" "$ip" "内网/私有地址" "$rtt"
+      continue
+    fi
     [[ "$asn" == "null" ]] && asn=""
     [[ -z "$asn" ]] && asn=$(ip2asn "$ip")
     tag=$(tag_asn "$asn")
-    [[ "$country" == "null" ]] && country=""
-    [[ "$prov" == "null" ]] && prov=""
-    [[ "$city" == "null" ]] && city=""
-    [[ "$owner" == "null" ]] && owner=""
 
     [[ "$ip" == 202.97.* && $first202 -eq 0 ]] && first202=$idx
     [[ "$ip" == 59.43.*  && $first5943 -eq 0 ]] && first5943=$idx
 
     if [[ -n "$asn" && "$asn" != "$lastasn" ]]; then
-      P_ASNS="$P_ASNS $asn"
-      lastasn="$asn"
+      P_ASNS="$P_ASNS $asn"; lastasn="$asn"
     fi
     if [[ -n "$country" && "$country" != "$lastc" ]]; then
-      P_COUNTRIES="${P_COUNTRIES:+$P_COUNTRIES → }$country"
-      lastc="$country"
+      P_COUNTRIES="${P_COUNTRIES:+$P_COUNTRIES → }$country"; lastc="$country"
     fi
 
     place="$country${prov:+ $prov}${city:+ $city}"
-    [[ -z "$place" ]] && place="内网/未知"
+    [[ -z "$place" ]] && place="位置未知"
     seg="$place"
     if [[ -n "$tag" ]]; then seg="$seg[$tag]"
     elif [[ -n "$asn" ]]; then seg="$seg[AS$asn]"; fi
     if [[ "$seg" != "$lastseg" ]]; then
-      P_PATH="${P_PATH:+$P_PATH → }$seg"
-      lastseg="$seg"
+      P_PATH="${P_PATH:+$P_PATH → }$seg"; lastseg="$seg"
     fi
 
-    if [[ "$rtt" != "0" && -n "$rtt" ]]; then P_RTT="$rtt"; fi
+    [[ "$rtt" != "0" && -n "$rtt" ]] && P_RTT="$rtt"
+
+    if [[ "$country" == "中国" && $entry_set -eq 0 ]]; then
+      P_ENTRY="第${ttl}跳 $ip $place${tag:+[$tag]}，延迟 ${rtt}ms"
+      entry_set=1
+    fi
 
     if [[ "$show" == "1" ]]; then
-      local mark=""
-      [[ -n "$tag" ]] && mark="${G}[$tag]${N}"
-      printf ' %2s  %-16s %s%s  %s  %s ms\n' "$ttl" "$ip" \
-        "${asn:+AS$asn }" "$mark" "$place ${owner}" "$rtt"
+      mark=""; [[ -n "$tag" ]] && mark="${G}[$tag]${N}"
+      printf ' %2s  %-16s %s%s  %s  %s ms\n' "$ttl" "$ip" "${asn:+AS$asn }" "$mark" "$place" "$rtt"
     fi
   done < "$f"
 
-  if [[ $first202 -gt 0 && $first5943 -gt 0 && $first202 -lt $first5943 ]]; then
-    P_GT=1
-  fi
+  if [[ $first202 -gt 0 && $first5943 -gt 0 && $first202 -lt $first5943 ]]; then P_GT=1; fi
+}
+
+rate() {
+  awk -v r="$1" 'BEGIN{
+    if (r == "-" || r == "") print "-";
+    else if (r < 100) print "优秀";
+    else if (r < 180) print "良好";
+    else if (r < 250) print "一般";
+    else print "偏高(疑似绕路)";
+  }'
 }
 
 # ---------------- 汇总 ----------------
 reset_summary() {
-  S_NAME=(); S_LINE=(); S_GRADE=(); S_RTT=(); S_COUNTRY=(); S_PATH=(); S_START=()
+  S_NAME=(); S_LINE=(); S_GRADE=(); S_RTT=(); S_COUNTRY=(); S_PATH=(); S_START=(); S_ENTRY=(); S_REACH=()
 }
 
-add_summary() { # 名称 isp 起点
+add_summary() { # 名称 isp 起点 是否到达(1/0)
   classify "$2"
   S_NAME+=("$1"); S_LINE+=("$LINE"); S_GRADE+=("$GRADE")
   S_RTT+=("$P_RTT"); S_COUNTRY+=("$P_COUNTRIES"); S_PATH+=("$P_PATH"); S_START+=("$3")
+  S_ENTRY+=("$P_ENTRY")
+  if [[ "$4" == "1" ]]; then S_REACH+=("已到达目标")
+  else S_REACH+=("未到达目标(目标屏蔽ICMP或中途不回应，延迟取最后有响应的一跳)"); fi
 }
 
 add_fail() {
   S_NAME+=("$1"); S_LINE+=("检测失败"); S_GRADE+=("-")
-  S_RTT+=("-"); S_COUNTRY+=("-"); S_PATH+=("-"); S_START+=("$2")
+  S_RTT+=("-"); S_COUNTRY+=("-"); S_PATH+=("-"); S_START+=("$2"); S_ENTRY+=("-"); S_REACH+=("-")
 }
 
 print_summary() { # 标题
   echo
   echo "${B}══════════════════════ $1 ══════════════════════${N}"
-  printf '%s %s %s %s %s\n' "$(pad 目的地 16)" "$(pad 线路类型 20)" "$(pad 等级 8)" "$(pad 延迟 10)" "途经国家"
-  echo "--------------------------------------------------------------------------------"
+  printf '%s %s %s %s %s %s\n' "$(pad 目的地 14)" "$(pad 线路类型 22)" "$(pad 等级 6)" "$(pad 延迟 9)" "$(pad 评价 18)" "途经国家"
+  echo "------------------------------------------------------------------------------------------"
   local i col rtt
   for i in "${!S_NAME[@]}"; do
     case "${S_GRADE[$i]}" in
@@ -239,44 +294,42 @@ print_summary() { # 标题
       *) col="$R" ;;
     esac
     rtt="${S_RTT[$i]}"; [[ "$rtt" != "-" ]] && rtt="${rtt}ms"
-    printf '%s %s %s %s %s\n' "$(pad "${S_NAME[$i]}" 16)" "$(pad "${S_LINE[$i]}" 20)" \
-      "${col}$(pad "${S_GRADE[$i]}" 8)${N}" "$(pad "$rtt" 10)" "${S_COUNTRY[$i]}"
+    printf '%s %s %s %s %s %s\n' "$(pad "${S_NAME[$i]}" 14)" "$(pad "${S_LINE[$i]}" 22)" \
+      "${col}$(pad "${S_GRADE[$i]}" 6)${N}" "$(pad "$rtt" 9)" "$(pad "$(rate "${S_RTT[$i]}")" 18)" "${S_COUNTRY[$i]}"
   done
   echo
-  echo "${B}—— 各线路详细经过的地方 ——${N}"
+  echo "${B}—— 各线路完整经过的地方 ——${N}"
   for i in "${!S_NAME[@]}"; do
     echo
-    echo "【${S_NAME[$i]}】 ${S_LINE[$i]} (${S_GRADE[$i]})  延迟: ${S_RTT[$i]}ms"
+    echo "【${S_NAME[$i]}】 ${S_LINE[$i]} (${S_GRADE[$i]})   延迟: ${S_RTT[$i]}ms"
     echo "  起点: ${S_START[$i]}"
+    echo "  入境点: ${S_ENTRY[$i]}"
     echo "  路径: ${S_PATH[$i]}"
+    echo "  终点: ${S_REACH[$i]}"
   done
   echo
-  echo "提示: 精品=CN2 GIA / 联通9929、10099 / 移动CMIN2；其余(含CN2 GT)按普通线路处理。"
+  echo "说明:"
+  echo " 1) 精品=CN2 GIA / 联通9929、10099 / 移动CMIN2；其余(含CN2 GT)按普通处理。"
+  echo " 2) 评价只按延迟估计(<100优秀 <180良好 <250一般 其余偏高)，请结合VPS所在地判断是否绕路。"
+  echo " 3) 国家/城市来自IP库，骨干网设备的位置偶尔不准，以延迟和ASN为主。"
+  echo " 4) 路径里出现 Cloudflare(AS13335) 说明这台机器的出口经过了Cloudflare网络，测到的是该出口线路。"
 }
 
 # ---------------- 2. 回程 ----------------
 trace_one() { # 名称 isp 目标
-  local name="$1" isp="$2" target="$3"
+  local name="$1" isp="$2" target="$3" reached=0
   echo
   echo "${B}━━━ 回程: $name ($target) ━━━${N}"
-  "$NT" -q 1 -m 30 -g cn -j "$target" 2>/dev/null | sed -n '/^{/,$p' > "$WORK/t.json"
-  $JQ -r '.Hops[]? | .[0] as $h | select($h != null)
-    | [ ($h.TTL // 0),
-        ($h.Address.IP // "*"),
-        ($h.Geo.asnumber // ""),
-        ($h.Geo.country // ""),
-        ($h.Geo.prov // ""),
-        ($h.Geo.city // ""),
-        ($h.Geo.owner // ""),
-        ((($h.RTT // 0) / 10000 | floor) / 100) ] | join("|")' "$WORK/t.json" > "$WORK/t.tsv" 2>/dev/null
+  "$NT" -q 1 -m 30 -g cn "$target" 2>/dev/null | parse_text > "$WORK/t.tsv"
 
   if [[ ! -s "$WORK/t.tsv" ]]; then
-    echo "${R}追踪失败（可能需要root权限，或该目标被屏蔽）${N}"
+    echo "${R}追踪失败（可能需要root权限，或网络不通）${N}"
     add_fail "$name" "VPS $MYLOC ($MYIP)"
     return
   fi
   analyze "$WORK/t.tsv" 1
-  add_summary "$name" "$isp" "VPS $MYLOC ($MYIP)"
+  [[ "$P_LASTIP" == "$target" ]] && reached=1
+  add_summary "$name" "$isp" "VPS $MYLOC ($MYIP)" "$reached"
 }
 
 do_back() {
@@ -381,7 +434,9 @@ do_forward() {
 
     echo "探针位置: $pinfo"
     analyze "$WORK/t.tsv" 1
-    add_summary "中国${isp}→VPS" "$isp" "国内${isp}探针 $pinfo"
+    local reached=0
+    [[ "$P_LASTIP" == "$MYIP" ]] && reached=1
+    add_summary "中国${isp}→VPS" "$isp" "国内${isp}探针 $pinfo" "$reached"
   done
   print_summary "去程线路统计 (中国 → 本VPS)"
   echo "如需更准确的去程，可在你本地电脑安装 NextTrace 后执行: nexttrace $MYIP"
@@ -404,6 +459,7 @@ do_uninstall() {
 }
 
 # ---------------- 主菜单 ----------------
+main() {
 while true; do
   clear
   echo "${B}╔══════════════════════════════════════╗${N}"
@@ -423,3 +479,6 @@ while true; do
     *) echo "无效选项"; sleep 1 ;;
   esac
 done
+}
+
+[[ -z "$ROUTE_TEST" ]] && main
