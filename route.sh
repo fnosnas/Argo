@@ -1,188 +1,425 @@
 #!/usr/bin/env bash
-#
-# VPS 路由追踪与线路检测一键脚本 (终极清晰版)
-# 
+# ============================================================
+#  VPS 去程 / 回程 线路检测脚本（中文）
+#  用法: bash <(curl -sL https://raw.githubusercontent.com/你的用户名/你的仓库/main/route.sh)
+#  说明: 所有下载内容只放在 /tmp/.routecheck，菜单 3 可一键清理
+# ============================================================
 
-# 确保以 root 权限运行
-[[ $EUID -ne 0 ]] && echo -e "\033[31m请使用 root 权限运行此脚本！\033[0m" && exit 1
+export LC_ALL=C.UTF-8 2>/dev/null
+[[ -t 0 ]] || exec < /dev/tty
 
-# 定义颜色
-RED="\033[31m"
-GREEN="\033[32m"
-YELLOW="\033[33m"
-BLUE="\033[34m"
-CYAN="\033[36m"
-PLAIN="\033[0m"
+WORK="/tmp/.routecheck"
+NT="$WORK/nexttrace"
+JQ="jq"
 
-# 安装必要的依赖并下载 NextTrace
-install_deps() {
-    if ! command -v nexttrace &> /dev/null; then
-        echo -e "${YELLOW}正在检测并安装路由追踪工具 (NextTrace)...${PLAIN}"
-        curl -s nxtrace.org/nt | bash
-        if ! command -v nexttrace &> /dev/null; then
-            echo -e "${RED}NextTrace 安装失败，请检查网络！${PLAIN}"
-            return 1
-        fi
+R=$'\033[31m'; G=$'\033[32m'; Y=$'\033[33m'; B=$'\033[36m'; N=$'\033[0m'
+
+# ---------------- 通用小工具 ----------------
+
+# 按显示宽度补空格（中文占2格）
+pad() {
+  local s="$1" w="$2" chars bytes cur i
+  chars=${#s}
+  bytes=$(printf '%s' "$s" | LC_ALL=C wc -c)
+  cur=$(( chars + (bytes - chars) / 2 ))
+  printf '%s' "$s"
+  for ((i = cur; i < w; i++)); do printf ' '; done
+}
+
+pause() {
+  echo
+  local k
+  printf '%s' "${Y}按空格键返回主菜单...${N}"
+  while true; do
+    IFS= read -rsn1 k
+    [[ "$k" == " " ]] && break
+  done
+}
+
+ensure_env() {
+  mkdir -p "$WORK"
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "${R}缺少 curl，请先安装: apt install -y curl  或  yum install -y curl${N}"
+    return 1
+  fi
+  local arch
+  case "$(uname -m)" in
+    x86_64|amd64) arch=amd64 ;;
+    aarch64|arm64) arch=arm64 ;;
+    armv7*|armv6*) arch=armv7 ;;
+    i?86) arch=386 ;;
+    *) echo "${R}不支持的CPU架构: $(uname -m)${N}"; return 1 ;;
+  esac
+
+  if [[ ! -x "$NT" ]]; then
+    echo "正在下载 NextTrace 到 $WORK ..."
+    if ! curl -fsSL --retry 2 -o "$NT" "https://github.com/nxtrace/NTrace-core/releases/latest/download/nexttrace_linux_$arch"; then
+      echo "${R}NextTrace 下载失败，请检查网络能否访问 github.com${N}"
+      rm -f "$NT"
+      return 1
     fi
-}
+    chmod +x "$NT"
+  fi
 
-# 核心函数：运行测试并生成像路书一样的直观报告
-run_trace_with_clean_report() {
-    local target_ip="$1"
-    local target_name="$2"
-    
-    echo -e "\n${BLUE}正在测试到 【${target_name}】 (${target_ip}) 的路由...${PLAIN}"
-    echo -e "${CYAN}--------------------------------------------------------------------------------${PLAIN}"
-    
-    local tmp_file="/tmp/nxtrace_out_$$.txt"
-    nexttrace "$target_ip" | tee "$tmp_file"
-    
-    echo -e "\n${CYAN}================================================================================${PLAIN}"
-    echo -e "${GREEN}【${target_name}】 完整漫游路书与线路诊断报告${PLAIN}"
-    echo -e "${CYAN}================================================================================${PLAIN}"
-    
-    local has_绕美=0
-    
-    while IFS= read -r line; do
-        if echo "$line" | grep -qE "^[[:space:]]*[0-9]+[[:space:]]+([0-9]{1,3}\.){3}[0-9]{1,3}"; then
-            local hop_num
-            hop_num=$(echo "$line" | awk '{print $1}')
-            
-            local ip_addr
-            ip_addr=$(echo "$line" | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}" | head -n 1)
-            
-            # 提取延迟数据
-            local latency
-            latency=$(echo "$line" | grep -oE "[0-9]+\.[0-9]+[[:space:]]ms" | head -n 1)
-            [[ -z "$latency" ]] && latency="超时/无响应"
-
-            # 地理位置判断
-            local loc="未知地区"
-            if echo "$line" | grep -qE "香港|Hong Kong"; then
-                loc="中国香港"
-            elif echo "$line" | grep -qE "新加坡|Singapore"; then
-                loc="新加坡"
-            elif echo "$line" | grep -qE "美国|Los Angeles|San Jose|Miami|Dallas|Atlanta|Georgia|Florida"; then
-                loc="美国 (跨洲绕路)"
-                has_绕美=1
-            elif echo "$line" | grep -qE "日本|Tokyo|Osaka"; then
-                loc="日本"
-            elif echo "$line" | grep -qE "中国|上海|广州|北京|深圳"; then
-                loc="中国大陆节点"
-            else
-                loc="国际中转节点"
-            fi
-            
-            # 线路判定
-            local line_type="普通直连"
-            if echo "$line" | grep -qE "59.43\."; then
-                line_type="电信 CN2 GIA (精品)"
-            elif echo "$line" | grep -qE "10099\."; then
-                line_type="联通 AS9929 (精品)"
-            elif echo "$line" | grep -qE "4837\."; then
-                line_type="联通 AS4837 (优质)"
-            elif echo "$line" | grep -qE "58.245\.|cmi"; then
-                line_type="移动 CMI (精品)"
-            elif echo "$line" | grep -qE "202.97\."; then
-                line_type="电信 163骨干网 (普通拥堵)"
-            elif echo "$line" | grep -qE "ntt|pccw|telia|arelion|cogentco"; then
-                line_type="国际杂牌转运 (绕路高延迟)"
-            fi
-            
-            echo -e "第 ${CYAN}${hop_num}${PLAIN} 跳 -> IP: ${YELLOW}${ip_addr}${PLAIN} | 位置: ${loc}"
-            echo -e "       └─ 线路: ${line_type} | 延迟: ${GREEN}${latency}${PLAIN}"
-            echo -e "--------------------------------------------------------------------------------"
-        fi
-    done < "$tmp_file"
-    
-    # 总结结论
-    echo -e "\n${GREEN}【最终诊断结论】${PLAIN}"
-    if [ "$has_绕美" -eq 1 ]; then
-        echo -e "  ❌ ${RED}判定结果：该 VPS 存在严重的国际绕路现象！${PLAIN}"
-        echo -e "  📋 路线复盘：数据包从本地 VPS 出发后，先被运去了【美国】等欧美机房，绕了整整大半个地球，才从美国折返进入国内上海/广州。"
-        echo -e "  💡 延迟高原因：跨洲物理距离导致延迟直接暴增至 270ms~350ms 级别，这也是你用起来感觉非常卡顿的根本原因。"
-    else
-        echo -e "  ✔ ${GREEN}判定结果：该线路未发现跨洲绕路，属于正常的直连或区域优化路线。${PLAIN}"
+  if command -v jq >/dev/null 2>&1; then
+    JQ="jq"
+  else
+    JQ="$WORK/jq"
+    if [[ ! -x "$JQ" ]]; then
+      local ja="$arch"
+      [[ "$arch" == "386" ]] && ja="i386"
+      [[ "$arch" == "armv7" ]] && ja="armhf"
+      echo "正在下载 jq 到 $WORK ..."
+      if ! curl -fsSL --retry 2 -o "$JQ" "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$ja"; then
+        echo "${R}jq 下载失败${N}"
+        rm -f "$JQ"
+        return 1
+      fi
+      chmod +x "$JQ"
     fi
-    echo -e "${CYAN}================================================================================${PLAIN}"
-    
-    rm -f "$tmp_file"
+  fi
+  return 0
 }
 
-# 1. 测去程线路 (国内 -> VPS)
-check_going() {
-    install_deps || return
-    echo -e "\n${BLUE}=== 开始检测去程线路 (国内各运营商 -> 本 VPS) ===${PLAIN}"
-    local vps_ip
-    vps_ip=$(curl -s ip.sb)
-    echo -e "当前 VPS 的公网 IP: ${CYAN}$vps_ip${PLAIN}"
-    run_trace_with_clean_report "$vps_ip" "综合去程测速"
+get_local() {
+  local j
+  j=$(curl -s --max-time 8 "http://ip-api.com/json/?lang=zh-CN&fields=query,country,regionName,city,isp")
+  MYIP=$($JQ -r '.query // "未知"' <<<"$j" 2>/dev/null)
+  MYLOC=$($JQ -r '[.country,.regionName,.city] | map(select(. != null and . != "")) | join(" ")' <<<"$j" 2>/dev/null)
+  MYISP=$($JQ -r '.isp // ""' <<<"$j" 2>/dev/null)
+  [[ -z "$MYIP" ]] && MYIP="未知"
+  [[ -z "$MYLOC" ]] && MYLOC="未知位置"
 }
 
-# 2. 测回程线路 (VPS -> 国内)
-check_return() {
-    install_deps || return
-    echo -e "\n${BLUE}=== 开始检测回程线路 (本 VPS -> 国内三大运营商) ===${PLAIN}"
-    run_trace_with_clean_report "202.96.209.133" "电信 (上海)"
-    run_trace_with_clean_report "210.22.84.3" "联通 (上海)"
-    run_trace_with_clean_report "211.136.192.6" "移动 (上海)"
+# ---------------- 线路识别 ----------------
+
+tag_asn() {
+  case "$1" in
+    4809)  echo "CN2" ;;
+    4134)  echo "电信163" ;;
+    23764) echo "电信CTG" ;;
+    9929)  echo "联通9929" ;;
+    10099) echo "联通10099" ;;
+    4837)  echo "联通169" ;;
+    58807) echo "移动CMIN2" ;;
+    58453) echo "移动CMI" ;;
+    9808)  echo "移动骨干" ;;
+    4538)  echo "教育网" ;;
+    *)     echo "" ;;
+  esac
 }
 
-# 3. 清理并卸载脚本产生的所有内容
-uninstall() {
-    echo -e "\n${YELLOW}正在清理脚本产生和安装的所有内容...${PLAIN}"
-    if [ -f /usr/local/bin/nxtrace ]; then
-        rm -f /usr/local/bin/nxtrace
-        echo -e "${GREEN}已删除 NextTrace 主程序 (/usr/local/bin/nxtrace)${PLAIN}"
+# 当地理库没给出ASN时，用IP段兜底
+ip2asn() {
+  case "$1" in
+    59.43.*) echo 4809 ;;
+    202.97.*) echo 4134 ;;
+    218.105.*|210.51.*) echo 9929 ;;
+    219.158.*) echo 4837 ;;
+    *) echo "" ;;
+  esac
+}
+
+has_asn() { [[ " $P_ASNS " == *" $1 "* ]]; }
+
+# 根据整条路径的ASN判断线路，结果放 LINE / GRADE
+classify() {
+  local isp="$1"
+  LINE="未识别"; GRADE="未知"
+  if [[ "$isp" == "联通" || "$isp" == "任意" ]]; then
+    if has_asn 9929; then LINE="联通 9929(A网)"; GRADE="精品"; return; fi
+    if has_asn 10099; then LINE="联通 10099(国际)"; GRADE="精品"; return; fi
+  fi
+  if [[ "$isp" == "移动" || "$isp" == "任意" ]]; then
+    if has_asn 58807; then LINE="移动 CMIN2"; GRADE="精品"; return; fi
+  fi
+  if [[ "$isp" == "电信" || "$isp" == "任意" ]]; then
+    if has_asn 4809; then
+      if [[ "$P_GT" == "1" ]]; then LINE="电信 CN2 GT"; GRADE="普通"
+      else LINE="电信 CN2 GIA"; GRADE="精品"; fi
+      return
     fi
-    rm -rf ~/.nxtrace /tmp/nxtrace*
-    echo -e "${GREEN}已清理相关缓存文件。清理完成！${PLAIN}"
+    if has_asn 23764; then LINE="电信 CTGNet"; GRADE="普通"; return; fi
+    if has_asn 4134; then LINE="电信 163骨干"; GRADE="普通"; return; fi
+  fi
+  if [[ "$isp" == "联通" || "$isp" == "任意" ]]; then
+    if has_asn 4837; then LINE="联通 169骨干"; GRADE="普通"; return; fi
+  fi
+  if [[ "$isp" == "移动" || "$isp" == "任意" ]]; then
+    if has_asn 58453; then LINE="移动 CMI"; GRADE="普通"; return; fi
+    if has_asn 9808; then LINE="移动 CMNET骨干"; GRADE="普通"; return; fi
+  fi
 }
 
-# 按键返回主菜单
-press_key() {
-    echo -e "\n"
-    read -n 1 -s -r -p "按任意键（或空格键）返回主菜单..."
+# ---------------- 逐跳分析 ----------------
+# 输入 tsv: ttl|ip|asn|国家|省|城市|owner|rtt
+analyze() {
+  local f="$1" show="$2"
+  P_ASNS=""; P_COUNTRIES=""; P_PATH=""; P_RTT="-"; P_GT=0
+  local lastc="" lastasn="" lastseg="" idx=0 first202=0 first5943=0
+  local ttl ip asn country prov city owner rtt tag seg place
+
+  while IFS='|' read -r ttl ip asn country prov city owner rtt; do
+    idx=$((idx + 1))
+    if [[ -z "$ip" || "$ip" == "*" ]]; then
+      [[ "$show" == "1" ]] && printf ' %2s  %s\n' "$ttl" "${Y}*  请求超时(该路由器不回应)${N}"
+      continue
+    fi
+    [[ "$asn" == "null" ]] && asn=""
+    [[ -z "$asn" ]] && asn=$(ip2asn "$ip")
+    tag=$(tag_asn "$asn")
+    [[ "$country" == "null" ]] && country=""
+    [[ "$prov" == "null" ]] && prov=""
+    [[ "$city" == "null" ]] && city=""
+    [[ "$owner" == "null" ]] && owner=""
+
+    [[ "$ip" == 202.97.* && $first202 -eq 0 ]] && first202=$idx
+    [[ "$ip" == 59.43.*  && $first5943 -eq 0 ]] && first5943=$idx
+
+    if [[ -n "$asn" && "$asn" != "$lastasn" ]]; then
+      P_ASNS="$P_ASNS $asn"
+      lastasn="$asn"
+    fi
+    if [[ -n "$country" && "$country" != "$lastc" ]]; then
+      P_COUNTRIES="${P_COUNTRIES:+$P_COUNTRIES → }$country"
+      lastc="$country"
+    fi
+
+    place="$country${prov:+ $prov}${city:+ $city}"
+    [[ -z "$place" ]] && place="内网/未知"
+    seg="$place"
+    if [[ -n "$tag" ]]; then seg="$seg[$tag]"
+    elif [[ -n "$asn" ]]; then seg="$seg[AS$asn]"; fi
+    if [[ "$seg" != "$lastseg" ]]; then
+      P_PATH="${P_PATH:+$P_PATH → }$seg"
+      lastseg="$seg"
+    fi
+
+    if [[ "$rtt" != "0" && -n "$rtt" ]]; then P_RTT="$rtt"; fi
+
+    if [[ "$show" == "1" ]]; then
+      local mark=""
+      [[ -n "$tag" ]] && mark="${G}[$tag]${N}"
+      printf ' %2s  %-16s %s%s  %s  %s ms\n' "$ttl" "$ip" \
+        "${asn:+AS$asn }" "$mark" "$place ${owner}" "$rtt"
+    fi
+  done < "$f"
+
+  if [[ $first202 -gt 0 && $first5943 -gt 0 && $first202 -lt $first5943 ]]; then
+    P_GT=1
+  fi
 }
 
-# 主菜单循环
-main_menu() {
-    while true; do
-        clear
-        echo -e "=================================================="
-        echo -e "          VPS 路由线路检测与评测工具箱            "
-        echo -e "=================================================="
-        echo -e " ${GREEN}1.${PLAIN} 检测去程线路 (国内 -> VPS)"
-        echo -e " ${GREEN}2.${PLAIN} 检测回程线路 (VPS -> 国内三大运营商)"
-        echo -e " ${GREEN}3.${PLAIN} 一键卸载/彻底清理所有安装和缓存内容"
-        echo -e " ${RED}0.${PLAIN} 退出脚本"
-        echo -e "=================================================="
-        read -p "请输入选项 [0-3]: " choice
-        
-        case "$choice" in
-            1)
-                check_going
-                press_key
-                ;;
-            2)
-                check_return
-                press_key
-                ;;
-            3)
-                uninstall
-                press_key
-                ;;
-            0)
-                echo -e "\n感谢使用，再见！"
-                exit 0
-                ;;
-            *)
-                echo -e "\n${RED}无效的选项，请重新输入！${PLAIN}"
-                sleep 1
-                ;;
-        esac
+# ---------------- 汇总 ----------------
+reset_summary() {
+  S_NAME=(); S_LINE=(); S_GRADE=(); S_RTT=(); S_COUNTRY=(); S_PATH=(); S_START=()
+}
+
+add_summary() { # 名称 isp 起点
+  classify "$2"
+  S_NAME+=("$1"); S_LINE+=("$LINE"); S_GRADE+=("$GRADE")
+  S_RTT+=("$P_RTT"); S_COUNTRY+=("$P_COUNTRIES"); S_PATH+=("$P_PATH"); S_START+=("$3")
+}
+
+add_fail() {
+  S_NAME+=("$1"); S_LINE+=("检测失败"); S_GRADE+=("-")
+  S_RTT+=("-"); S_COUNTRY+=("-"); S_PATH+=("-"); S_START+=("$2")
+}
+
+print_summary() { # 标题
+  echo
+  echo "${B}══════════════════════ $1 ══════════════════════${N}"
+  printf '%s %s %s %s %s\n' "$(pad 目的地 16)" "$(pad 线路类型 20)" "$(pad 等级 8)" "$(pad 延迟 10)" "途经国家"
+  echo "--------------------------------------------------------------------------------"
+  local i col rtt
+  for i in "${!S_NAME[@]}"; do
+    case "${S_GRADE[$i]}" in
+      精品) col="$G" ;;
+      普通) col="$Y" ;;
+      *) col="$R" ;;
+    esac
+    rtt="${S_RTT[$i]}"; [[ "$rtt" != "-" ]] && rtt="${rtt}ms"
+    printf '%s %s %s %s %s\n' "$(pad "${S_NAME[$i]}" 16)" "$(pad "${S_LINE[$i]}" 20)" \
+      "${col}$(pad "${S_GRADE[$i]}" 8)${N}" "$(pad "$rtt" 10)" "${S_COUNTRY[$i]}"
+  done
+  echo
+  echo "${B}—— 各线路详细经过的地方 ——${N}"
+  for i in "${!S_NAME[@]}"; do
+    echo
+    echo "【${S_NAME[$i]}】 ${S_LINE[$i]} (${S_GRADE[$i]})  延迟: ${S_RTT[$i]}ms"
+    echo "  起点: ${S_START[$i]}"
+    echo "  路径: ${S_PATH[$i]}"
+  done
+  echo
+  echo "提示: 精品=CN2 GIA / 联通9929、10099 / 移动CMIN2；其余(含CN2 GT)按普通线路处理。"
+}
+
+# ---------------- 2. 回程 ----------------
+trace_one() { # 名称 isp 目标
+  local name="$1" isp="$2" target="$3"
+  echo
+  echo "${B}━━━ 回程: $name ($target) ━━━${N}"
+  "$NT" -q 1 -m 30 -g cn -j "$target" 2>/dev/null | sed -n '/^{/,$p' > "$WORK/t.json"
+  $JQ -r '.Hops[]? | .[0] as $h | select($h != null)
+    | [ ($h.TTL // 0),
+        ($h.Address.IP // "*"),
+        ($h.Geo.asnumber // ""),
+        ($h.Geo.country // ""),
+        ($h.Geo.prov // ""),
+        ($h.Geo.city // ""),
+        ($h.Geo.owner // ""),
+        ((($h.RTT // 0) / 10000 | floor) / 100) ] | join("|")' "$WORK/t.json" > "$WORK/t.tsv" 2>/dev/null
+
+  if [[ ! -s "$WORK/t.tsv" ]]; then
+    echo "${R}追踪失败（可能需要root权限，或该目标被屏蔽）${N}"
+    add_fail "$name" "VPS $MYLOC ($MYIP)"
+    return
+  fi
+  analyze "$WORK/t.tsv" 1
+  add_summary "$name" "$isp" "VPS $MYLOC ($MYIP)"
+}
+
+do_back() {
+  ensure_env || return
+  get_local
+  clear
+  echo "${B}回程检测: VPS → 中国${N}   本机: $MYLOC  $MYIP  $MYISP"
+  [[ $EUID -ne 0 ]] && echo "${Y}提示: 非root运行可能无法发送ICMP，建议使用root${N}"
+  echo
+  read -rp "直接回车=测三网九节点；或输入你自己的IP/域名(测到你家): " custom
+  reset_summary
+  if [[ -n "$custom" ]]; then
+    trace_one "自定义($custom)" 任意 "$custom"
+    print_summary "回程线路统计 (VPS → 你)"
+    return
+  fi
+  echo "共9个节点，预计2~5分钟，请耐心等待..."
+  local list=(
+    "北京电信|电信|219.141.140.10"
+    "上海电信|电信|202.96.209.133"
+    "广州电信|电信|58.60.188.222"
+    "北京联通|联通|202.106.195.68"
+    "上海联通|联通|210.22.97.1"
+    "广州联通|联通|210.21.196.6"
+    "北京移动|移动|221.179.155.161"
+    "上海移动|移动|211.136.112.200"
+    "广州移动|移动|120.196.165.24"
+  )
+  local item n i t
+  for item in "${list[@]}"; do
+    IFS='|' read -r n i t <<<"$item"
+    trace_one "$n" "$i" "$t"
+  done
+  print_summary "回程线路统计 (VPS → 中国三网)"
+}
+
+# ---------------- 1. 去程 ----------------
+# 去程(国内→VPS)必须从国内发起，这里借助 Globalping 公共探针
+do_forward() {
+  ensure_env || return
+  get_local
+  clear
+  echo "${B}去程检测: 中国 → 本VPS${N}   本机: $MYLOC  $MYIP"
+  echo "说明: 去程需要从国内发起，本功能调用 Globalping 公共探针(免费、无需注册)。"
+  echo "      国内探针数量有限，可能测不到某些运营商。"
+  reset_summary
+
+  local labels=("电信|china telecom" "联通|china unicom" "移动|china mobile")
+  local item isp magic body resp id t ok
+  for item in "${labels[@]}"; do
+    IFS='|' read -r isp magic <<<"$item"
+    echo
+    echo "${B}━━━ 去程: 中国${isp} → 本VPS ━━━${N}"
+    body="{\"type\":\"traceroute\",\"target\":\"$MYIP\",\"locations\":[{\"magic\":\"$magic\",\"limit\":1}]}"
+    resp=$(curl -s --max-time 20 -X POST "https://api.globalping.io/v1/measurements" \
+      -H 'Content-Type: application/json' -d "$body")
+    id=$($JQ -r '.id // empty' <<<"$resp" 2>/dev/null)
+    if [[ -z "$id" ]]; then
+      echo "${R}没有可用的国内${isp}探针，跳过${N}"
+      add_fail "中国${isp}" "国内${isp}探针(无)"
+      continue
+    fi
+    ok=0
+    for t in $(seq 1 40); do
+      curl -s --max-time 15 "https://api.globalping.io/v1/measurements/$id" > "$WORK/gp.json"
+      if [[ "$($JQ -r '.status // ""' "$WORK/gp.json" 2>/dev/null)" == "finished" ]]; then ok=1; break; fi
+      sleep 2
     done
+    if [[ $ok -ne 1 ]]; then
+      echo "${R}等待结果超时${N}"; add_fail "中国${isp}" "国内${isp}探针"; continue
+    fi
+
+    local pinfo
+    pinfo=$($JQ -r '.results[0].probe | "\(.country // "") \(.city // "") \(.network // "")"' "$WORK/gp.json" 2>/dev/null)
+    $JQ -r '.results[0].result.hops // [] | to_entries[]
+      | "\(.key + 1)|\(.value.resolvedAddress // "*")|\((.value.timings // [])[0].rtt // 0)"' \
+      "$WORK/gp.json" > "$WORK/f_raw.txt" 2>/dev/null
+    if [[ ! -s "$WORK/f_raw.txt" ]]; then
+      echo "${R}探针没有返回路径${N}"; add_fail "中国${isp}" "$pinfo"; continue
+    fi
+
+    # 批量查询归属地
+    local ips json geo
+    ips=$(cut -d'|' -f2 "$WORK/f_raw.txt" | grep -v '^\*$' | sort -u)
+    json=$(printf '%s\n' $ips | $JQ -R '{query: .}' | $JQ -s .)
+    geo=$(curl -s --max-time 15 -X POST \
+      "http://ip-api.com/batch?lang=zh-CN&fields=status,country,regionName,city,isp,as,query" -d "$json")
+    declare -A GA GC GR GCI GO
+    GA=(); GC=(); GR=(); GCI=(); GO=()
+    local q a c r ci o
+    while IFS='|' read -r q a c r ci o; do
+      GA[$q]="$a"; GC[$q]="$c"; GR[$q]="$r"; GCI[$q]="$ci"; GO[$q]="$o"
+    done < <($JQ -r '.[]? | select(.status == "success")
+      | [.query, ((.as // "") | split(" ") | .[0] | ltrimstr("AS")), .country, .regionName, .city, .isp] | join("|")' <<<"$geo" 2>/dev/null)
+
+    local ttl ip rtt
+    : > "$WORK/t.tsv"
+    while IFS='|' read -r ttl ip rtt; do
+      rtt=$(awk -v x="$rtt" 'BEGIN{printf "%.2f", x}')
+      echo "$ttl|$ip|${GA[$ip]}|${GC[$ip]}|${GR[$ip]}|${GCI[$ip]}|${GO[$ip]}|$rtt" >> "$WORK/t.tsv"
+    done < "$WORK/f_raw.txt"
+
+    echo "探针位置: $pinfo"
+    analyze "$WORK/t.tsv" 1
+    add_summary "中国${isp}→VPS" "$isp" "国内${isp}探针 $pinfo"
+  done
+  print_summary "去程线路统计 (中国 → 本VPS)"
+  echo "如需更准确的去程，可在你本地电脑安装 NextTrace 后执行: nexttrace $MYIP"
 }
 
-# 运行主菜单
-main_menu
+# ---------------- 3. 清理 ----------------
+do_uninstall() {
+  clear
+  echo "${B}清理脚本产生的所有内容...${N}"
+  local before
+  before=$(du -sh "$WORK" 2>/dev/null | cut -f1)
+  rm -rf "$WORK" "$HOME/.nexttrace" 2>/dev/null
+  echo "已删除: $WORK (${before:-0})"
+  echo "已删除: $HOME/.nexttrace (如果存在)"
+  if [[ -f "$0" && "$0" != /dev/* && "$0" != /proc/* ]]; then
+    rm -f "$0" && echo "已删除脚本文件: $0"
+  fi
+  echo "${G}清理完成。本脚本没有往系统安装任何软件包，无其他残留。${N}"
+  echo "(如果之后再选择1或2，会重新下载所需工具)"
+}
+
+# ---------------- 主菜单 ----------------
+while true; do
+  clear
+  echo "${B}╔══════════════════════════════════════╗${N}"
+  echo "${B}║      VPS 线路检测脚本 (中文版)       ║${N}"
+  echo "${B}╚══════════════════════════════════════╝${N}"
+  echo "  1. 检测去程线路 (中国 → 本VPS)"
+  echo "  2. 检测回程线路 (本VPS → 中国)"
+  echo "  3. 删除本脚本产生的所有内容"
+  echo "  0. 退出脚本"
+  echo
+  read -rp "请输入选项 [0-3]: " choice
+  case "$choice" in
+    1) do_forward; pause ;;
+    2) do_back; pause ;;
+    3) do_uninstall; pause ;;
+    0) echo "已退出。"; exit 0 ;;
+    *) echo "无效选项"; sleep 1 ;;
+  esac
+done
