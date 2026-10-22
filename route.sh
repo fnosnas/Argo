@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# VPS 路由追踪与线路检测一键脚本
+# VPS 路由追踪与线路检测一键脚本 (带清晰中文总结表格)
 # 
 
 # 确保以 root 权限运行
@@ -18,7 +18,6 @@ PLAIN="\033[0m"
 install_deps() {
     if ! command -v nexttrace &> /dev/null; then
         echo -e "${YELLOW}正在检测并安装路由追踪工具 (NextTrace)...${PLAIN}"
-        # 自动下载并安装 NextTrace 到 /usr/local/bin
         curl -s nxtrace.org/nt | bash
         if ! command -v nexttrace &> /dev/null; then
             echo -e "${RED}NextTrace 安装失败，请检查网络！${PLAIN}"
@@ -27,46 +26,91 @@ install_deps() {
     fi
 }
 
-# 智能分析线路类型并高亮显示
-analyze_route() {
-    local ip_info="$1"
-    # 这里对常见的高质量线路和普通线路进行标记
-    if echo "$ip_info" | grep -qE "59.43\."; then
-        echo -e "${GREEN}[精品线路: 电信 CN2 GIA]${PLAIN}"
-    elif echo "$ip_info" | grep -qE "10099\."; then
-        echo -e "${GREEN}[精品线路: 联通 AS9929]${PLAIN}"
-    elif echo "$ip_info" | grep -qE "4837\."; then
-        echo -e "${CYAN}[优质线路: 联通 AS4837]${PLAIN}"
-    elif echo "$ip_info" | grep -qE "58.245\.|cmi"; then
-        echo -e "${GREEN}[精品线路: 移动 CMI]${PLAIN}"
-    elif echo "$ip_info" | grep -qE "202.97\."; then
-        echo -e "${YELLOW}[普通线路: 电信 163骨干网(容易拥堵)]${PLAIN}"
-    elif echo "$ip_info" | grep -qE "ntt|pccw|telia|cogentco"; then
-        echo -e "${RED}[普通线路: 国际杂牌/绕路风险高]${PLAIN}"
+# 智能分析单行跳数并判断线路类型
+analyze_hop() {
+    local line="$1"
+    if echo "$line" | grep -qE "59.43\."; then
+        echo -e "${GREEN}电信 CN2 GIA (精品线路)${PLAIN}"
+    elif echo "$line" | grep -qE "10099\."; then
+        echo -e "${GREEN}联通 AS9929 (精品线路)${PLAIN}"
+    elif echo "$line" | grep -qE "4837\."; then
+        echo -e "${CYAN}联通 AS4837 (优质线路)${PLAIN}"
+    elif echo "$line" | grep -qE "58.245\.|cmi"; then
+        echo -e "${GREEN}移动 CMI (精品线路)${PLAIN}"
+    elif echo "$line" | grep -qE "202.97\."; then
+        echo -e "${YELLOW}电信 163骨干网 (普通线路)${PLAIN}"
+    elif echo "$line" | grep -qE "ntt|pccw|telia|cogentco"; then
+        echo -e "${RED}国际杂牌/绕路 (普通线路)${PLAIN}"
     else
-        echo -e "$ip_info"
+        echo -e "普通/直连"
     fi
+}
+
+# 核心函数：运行测试并生成精简中文表格
+run_trace_with_summary() {
+    local target_ip="$1"
+    local target_name="$2"
+    
+    echo -e "\n${BLUE}正在测试到 【${target_name}】 (${target_ip}) 的路由...${PLAIN}"
+    echo -e "${CYAN}--------------------------------------------------------------------------------${PLAIN}"
+    
+    # 临时文件保存输出
+    local tmp_file="/tmp/nxtrace_out_$$.txt"
+    
+    # 运行 NextTrace 并将结果输出到屏幕和临时文件
+    nexttrace --lang cn "$target_ip" | tee "$tmp_file"
+    
+    echo -e "\n${CYAN}================================================================================${PLAIN}"
+    echo -e "${GREEN}【${target_name}】 路由简化总结报告：${PLAIN}"
+    echo -e "${CYAN}================================================================================${PLAIN}"
+    printf "%-6s | %-25s | %-20s | %-20s\n" "跳数" "节点位置/国家" "IP地址" "线路评估"
+    echo -e "--------------------------------------------------------------------------------"
+
+    while IFS=read -r line; do
+        # 提取包含 IP 和地理位置的行
+        if echo "$line" | grep -qE "([0-9]{1,3}\.){3}[0-9]{1,3}"; then
+            # 简单清洗并提取关键字段
+            local hop_num=$(echo "$line" | awk '{print $1}')
+            local ip_addr=$(echo "$line" | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}" | head -n 1)
+            
+            # 判断线路
+            local route_type=$(analyze_hop "$line")
+            
+            # 提取城市/国家特征
+            local loc="未知地区"
+            if echo "$line" | grep -qE "Hong Kong|香港"; then
+                loc="中国香港"
+            elif echo "$line" | grep -qE "Singapore|新加坡"; then
+                loc="新加坡"
+            elif echo "$line" | grep -qE "United States|美国|Los Angeles|San Jose"; then
+                loc="美国 (可能绕路)"
+            elif echo "$line" | grep -qE "Japan|日本|Tokyo|Osaka"; then
+                loc="日本"
+            elif echo "$line" | grep -qE "China|中国|Shanghai|Guangzhou|Beijing"; then
+                loc="中国大陆节点"
+            else
+                loc="国际中转节点"
+            fi
+
+            if [[ -n "$ip_addr" ]]; then
+                printf "%-6s | %-25s | %-20s | %-20s\n" "$hop_num" "$loc" "$ip_addr" "$route_type"
+            fi
+        fi
+    done < "$tmp_file"
+    
+    echo -e "${CYAN}================================================================================${PLAIN}"
+    rm -f "$tmp_file"
 }
 
 # 1. 测去程线路 (国内 -> VPS)
 check_going() {
     install_deps || return
     echo -e "\n${BLUE}=== 开始检测去程线路 (国内各运营商 -> 本 VPS) ===${PLAIN}"
-    echo -e "${YELLOW}提示: 去程通常通过多地测速节点进行模拟测试。${PLAIN}"
-    
-    # 使用 NextTrace 的默认多节点测速功能来观察去程/综合路由
     local vps_ip
     vps_ip=$(curl -s ip.sb)
-    echo -e "当前 VPS 的公网 IP: ${CYAN}$vps_ip${PLAIN}\n"
+    echo -e "当前 VPS 的公网 IP: ${CYAN}$vps_ip${PLAIN}"
     
-    echo -e "${CYAN}--- 测试电信去程 ---${PLAIN}"
-    nexttrace --tcp 59.43.80.86 &>/dev/null || nexttrace 202.106.0.20
-    
-    echo -e "\n${CYAN}--- 测试联通去程 ---${PLAIN}"
-    nexttrace 210.22.84.3
-    
-    echo -e "\n${CYAN}--- 测试移动去程 ---${PLAIN}"
-    nexttrace 211.136.192.6
+    run_trace_with_summary "$vps_ip" "综合去程测速"
 }
 
 # 2. 测回程线路 (VPS -> 国内)
@@ -74,41 +118,21 @@ check_return() {
     install_deps || return
     echo -e "\n${BLUE}=== 开始检测回程线路 (本 VPS -> 国内三大运营商) ===${PLAIN}"
     
-    # 定义国内三大运营商经典测试 IP
-    # 电信：上海电信 / 联通：上海联通 / 移动：上海移动
-    declare -A nodes=(
-        ["电信 (上海)"]="202.96.209.133"
-        ["联通 (上海)"]="210.22.84.3"
-        ["移动 (上海)"]="211.136.192.6"
-    )
-
-    for name in "${!nodes[@]}"; do
-        echo -e "\n${CYAN}--------------------------------------------------${PLAIN}"
-        echo -e "正在检测到 ${YELLOW}$name${PLAIN} (${nodes[$name]}) 的回程路由："
-        echo -e "${CYAN}--------------------------------------------------${PLAIN}"
-        
-        # 运行路由追踪并逐行分析
-        nexttrace --path-mode descriptive "${nodes[$name]}" | while read -r line; do
-            analyze_route "$line"
-        done
-    done
+    # 三大运营商代表性测试 IP
+    run_trace_with_summary "202.96.209.133" "电信 (上海)"
+    run_trace_with_summary "210.22.84.3" "联通 (上海)"
+    run_trace_with_summary "211.136.192.6" "移动 (上海)"
 }
 
 # 3. 清理并卸载脚本产生的所有内容
 uninstall() {
     echo -e "\n${YELLOW}正在清理脚本产生和安装的所有内容...${PLAIN}"
-    
-    # 删除 NextTrace 主程序及相关配置文件
     if [ -f /usr/local/bin/nxtrace ]; then
         rm -f /usr/local/bin/nxtrace
         echo -e "${GREEN}已删除 NextTrace 主程序 (/usr/local/bin/nxtrace)${PLAIN}"
     fi
-    
-    # 清理可能存在的缓存或临时文件
     rm -rf ~/.nxtrace /tmp/nxtrace*
-    echo -e "${GREEN}已清理相关缓存文件。${PLAIN}"
-    
-    echo -e "${GREEN}清理完成！该脚本未留下任何残留。${PLAIN}"
+    echo -e "${GREEN}已清理相关缓存文件。清理完成！${PLAIN}"
 }
 
 # 按键返回主菜单
