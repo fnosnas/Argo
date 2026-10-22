@@ -98,6 +98,23 @@ get_local() {
   [[ -z "$MYIP" ]] && MYIP="未知"
   MYLOC=$(echo $MYLOC)
   [[ -z "$MYLOC" ]] && MYLOC="未知位置"
+
+  # IPv6 出口(如果有)。IPv4和IPv6的出口位置可能完全不同
+  MYIP6=$(curl -s6 --max-time 6 https://api6.ipify.org 2>/dev/null)
+  MYLOC6=""; MYISP6=""
+  if [[ "$MYIP6" == *:* ]]; then
+    j=$(curl -s --max-time 8 "http://ip-api.com/json/$MYIP6?lang=zh-CN&fields=country,regionName,city,isp")
+    MYLOC6=$(echo "$(f country) $(f regionName) $(f city)")
+    MYISP6=$(f isp)
+  else
+    MYIP6=""
+  fi
+}
+
+# 起点描述: 目标是IPv6就用VPS的IPv6出口信息
+start_desc() {
+  if [[ "$1" == *:* && -n "$MYIP6" ]]; then echo "VPS ${MYLOC6:-位置未知} ($MYIP6)"
+  else echo "VPS $MYLOC ($MYIP)"; fi
 }
 
 # ---------------- 线路识别 ----------------
@@ -175,6 +192,7 @@ classify() {
 # ---------------- 逐跳分析 ----------------
 is_private() {
   case "$1" in
+    fc*|fd*|fe80*|::1) return 0 ;;
     10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*|100.6[4-9].*|100.[7-9][0-9].*|100.1[01][0-9].*|100.12[0-7].*) return 0 ;;
   esac
   return 1
@@ -207,7 +225,7 @@ parse_text() {
 analyze() {
   local f="$1" show="$2"
   P_ASNS=""; P_COUNTRIES=""; P_PATH=""; P_RTT="-"; P_GT=0
-  P_ENTRY="未进入中国网络"; P_LASTIP=""
+  P_ENTRY="未进入中国网络"; P_LASTIP=""; P_LASTPLACE=""
   local lastc="" lastasn="" lastseg="" idx=0 first202=0 first5943=0 entry_set=0
   local ttl ip asn country prov city owner rtt tag seg place mark
 
@@ -246,6 +264,7 @@ analyze() {
     fi
 
     [[ "$rtt" != "0" && -n "$rtt" ]] && P_RTT="$rtt"
+    P_LASTPLACE="$place${tag:+[$tag]}"
 
     if [[ "$country" == "中国" && $entry_set -eq 0 ]]; then
       P_ENTRY="第${ttl}跳 $ip $place${tag:+[$tag]}，延迟 ${rtt}ms"
@@ -282,7 +301,7 @@ add_summary() { # 名称 isp 起点 是否到达(1/0)
   S_RTT+=("$P_RTT"); S_COUNTRY+=("$P_COUNTRIES"); S_PATH+=("$P_PATH"); S_START+=("$3")
   S_ENTRY+=("$P_ENTRY")
   if [[ "$4" == "1" ]]; then S_REACH+=("已到达目标")
-  else S_REACH+=("未到达目标(目标屏蔽ICMP或中途不回应，延迟取最后有响应的一跳)"); fi
+  else S_REACH+=("未收到目标本机回应(家宽/防火墙常见)，最后可见节点: ${P_LASTPLACE:-未知}，延迟 ${P_RTT}ms"); fi
 }
 
 add_fail() {
@@ -333,25 +352,30 @@ trace_one() { # 名称 isp 目标
 
   if [[ ! -s "$WORK/t.tsv" ]]; then
     echo "${R}追踪失败（可能需要root权限，或网络不通）${N}"
-    add_fail "$name" "VPS $MYLOC ($MYIP)"
+    add_fail "$name" "$(start_desc "$target")"
     return
   fi
   analyze "$WORK/t.tsv" 1
   [[ "$P_LASTIP" == "$target" ]] && reached=1
-  add_summary "$name" "$isp" "VPS $MYLOC ($MYIP)" "$reached"
+  add_summary "$name" "$isp" "$(start_desc "$target") → 目标 $target" "$reached"
 }
 
 do_back() {
   ensure_env || return
   get_local
   clear
-  echo "${B}回程检测: VPS → 中国${N}   本机: $MYLOC  $MYIP  $MYISP"
+  echo "${B}回程检测: VPS → 中国${N}"
+  echo "VPS IPv4: $MYIP  $MYLOC  $MYISP"
+  [[ -n "$MYIP6" ]] && echo "VPS IPv6: $MYIP6  $MYLOC6  $MYISP6"
+  if [[ "$MYISP" == *Cloudflare* ]]; then
+    echo "${Y}注意: IPv4出口属于Cloudflare(可能是WARP/隧道)，IPv4测到的是Cloudflare出口线路，位置也可能不是机器真实位置。${N}"
+  fi
   [[ $EUID -ne 0 ]] && echo "${Y}提示: 非root运行可能无法发送ICMP，建议使用root${N}"
   echo
   read -rp "直接回车=测三网九节点；或输入你自己的IP/域名(测到你家): " custom
   reset_summary
   if [[ -n "$custom" ]]; then
-    trace_one "自定义($custom)" 任意 "$custom"
+    trace_one "自定义目标" 任意 "$custom"
     print_summary "回程线路统计 (VPS → 你)"
     return
   fi
