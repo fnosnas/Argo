@@ -1,4 +1,7 @@
-# ✈ 一键脚本, 小内存专用，可更改端口，自动保活， 兼容三大系统Alpine， Debian， Ubuntu
+# ✈ 一键脚本, 小内存专用，可更改端口，自动保活， 兼容三大系统Alpine， Debian， Ubuntu   
+
+VPS线路检测:```bash <(curl -fsSL ae86.ccwu.cc/route)```  
+
 
 # 🚀 VPS运行以下脚本   (端口转发小鸡安装用 → 容器端口，连接用 → 访问端口)
 Argo隧道  (带链路诊断) 
