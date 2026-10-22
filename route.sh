@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# VPS 路由追踪与线路检测一键脚本 (稳定修复版)
+# VPS 路由追踪与线路检测一键脚本 (修复版)
 # 
 
 # 确保以 root 权限运行
@@ -39,7 +39,7 @@ analyze_route_type() {
         echo "移动 CMI (精品)"
     elif echo "$text" | grep -qE "202.97\."; then
         echo "电信 163 (普通)"
-    elif echo "$text" | grep -qE "ntt|pccw|telia|cogentco"; then
+    elif echo "$text" | grep -qE "ntt|pccw|telia|cogentco|arelion"; then
         echo "国际杂牌/绕路"
     else
         echo "直连/普通"
@@ -56,7 +56,7 @@ run_trace_with_summary() {
     
     local tmp_file="/tmp/nxtrace_out_$$.txt"
     
-    # 纯净运行 NextTrace，不加多余参数，确保 100% 成功
+    # 运行 NextTrace 并将屏幕输出重定向到临时文件
     nexttrace "$target_ip" | tee "$tmp_file"
     
     echo -e "\n${CYAN}================================================================================${PLAIN}"
@@ -65,31 +65,26 @@ run_trace_with_summary() {
     printf "%-6s | %-25s | %-20s | %-22s\n" "跳数" "节点位置/国家" "IP地址" "线路评估"
     echo -e "--------------------------------------------------------------------------------"
 
-    # 逐行读取并清洗打印
-    while IFS=read -r line; do
-        # 筛选包含IP地址的有效路由行
+    # 逐行读取并清洗打印 (注意这里修复了 IFS= 与 read 之间的空格)
+    while IFS= read -r line; do
         if echo "$line" | grep -qE "([0-9]{1,3}\.){3}[0-9]{1,3}"; then
-            # 提取跳数 (行首数字)
             local hop_num
             hop_num=$(echo "$line" | awk '{print $1}' | tr -cd '0-9')
             [[ -z "$hop_num" ]] && hop_num="-"
 
-            # 提取IP地址
             local ip_addr
             ip_addr=$(echo "$line" | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}" | head -n 1)
 
-            # 评估线路
             local route_type
             route_type=$(analyze_route_type "$line")
 
-            # 提取地理位置粗略判断
             local loc="未知地区"
             if echo "$line" | grep -qE "Hong Kong|香港"; then
                 loc="中国香港"
             elif echo "$line" | grep -qE "Singapore|新加坡"; then
                 loc="新加坡"
-            elif echo "$line" | grep -qE "United States|美国|Los Angeles|San Jose"; then
-                loc="美国 (绕路)"
+            elif echo "$line" | grep -qE "United States|美国|Los Angeles|San Jose|Miami|Dallas|Atlanta"; then
+                loc="美国 (严重绕路)"
             elif echo "$line" | grep -qE "Japan|日本|Tokyo|Osaka"; then
                 loc="日本"
             elif echo "$line" | grep -qE "China|中国|Shanghai|Guangzhou|Beijing|Shenzhen"; then
@@ -115,7 +110,6 @@ check_going() {
     local vps_ip
     vps_ip=$(curl -s ip.sb)
     echo -e "当前 VPS 的公网 IP: ${CYAN}$vps_ip${PLAIN}"
-    
     run_trace_with_summary "$vps_ip" "综合去程测速"
 }
 
@@ -123,8 +117,6 @@ check_going() {
 check_return() {
     install_deps || return
     echo -e "\n${BLUE}=== 开始检测回程线路 (本 VPS -> 国内三大运营商) ===${PLAIN}"
-    
-    # 三大运营商代表性测试 IP
     run_trace_with_summary "202.96.209.133" "电信 (上海)"
     run_trace_with_summary "210.22.84.3" "联通 (上海)"
     run_trace_with_summary "211.136.192.6" "移动 (上海)"
@@ -153,7 +145,7 @@ main_menu() {
         clear
         echo -e "=================================================="
         echo -e "          VPS 路由线路检测与评测工具箱            "
-        echo -e "=================================================="
+        echo -e "================================================== "
         echo -e " ${GREEN}1.${PLAIN} 检测去程线路 (国内 -> VPS)"
         echo -e " ${GREEN}2.${PLAIN} 检测回程线路 (VPS -> 国内三大运营商)"
         echo -e " ${GREEN}3.${PLAIN} 一键卸载/彻底清理所有安装和缓存内容"
