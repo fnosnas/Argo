@@ -29,65 +29,74 @@ pad() {
 pause() {
   echo
   local k
-  printf '%s' "${Y}按空格键返回主菜单...${N}"
-  while true; do
-    IFS= read -rsn1 k
-    [[ "$k" == " " ]] && break
-  done
+  printf '%s' "${Y}按任意键返回主菜单...${N}"
+  IFS= read -rsn1 k
+  read -rsn8 -t 0.1 _ 2>/dev/null   # 吃掉方向键等多字节按键的残留
 }
 
+# 带重试的下载: 地址 保存路径
+dl() {
+  local url="$1" out="$2" i
+  for i in 1 2 3 4; do
+    curl -fsSL --connect-timeout 10 --max-time 120 -o "$out" "$url" && return 0
+    sleep 2
+  done
+  rm -f "$out"
+  return 1
+}
+
+ARCH=""
 ensure_env() {
   mkdir -p "$WORK"
   if ! command -v curl >/dev/null 2>&1; then
     echo "${R}缺少 curl，请先安装: apt install -y curl  或  yum install -y curl${N}"
     return 1
   fi
-  local arch
   case "$(uname -m)" in
-    x86_64|amd64) arch=amd64 ;;
-    aarch64|arm64) arch=arm64 ;;
-    armv7*|armv6*) arch=armv7 ;;
-    i?86) arch=386 ;;
+    x86_64|amd64) ARCH=amd64 ;;
+    aarch64|arm64) ARCH=arm64 ;;
+    armv7*|armv6*) ARCH=armv7 ;;
+    i?86) ARCH=386 ;;
     *) echo "${R}不支持的CPU架构: $(uname -m)${N}"; return 1 ;;
   esac
 
   if [[ ! -x "$NT" ]]; then
     echo "正在下载 NextTrace 到 $WORK ..."
-    if ! curl -fsSL --retry 2 -o "$NT" "https://github.com/nxtrace/NTrace-core/releases/latest/download/nexttrace_linux_$arch"; then
-      echo "${R}NextTrace 下载失败，请检查网络能否访问 github.com${N}"
-      rm -f "$NT"
+    if ! dl "https://github.com/nxtrace/NTrace-core/releases/latest/download/nexttrace_linux_$ARCH" "$NT"; then
+      echo "${R}NextTrace 下载失败(多次重试)，可能是这台机器访问 github.com 不稳定，稍后再试${N}"
       return 1
     fi
     chmod +x "$NT"
   fi
+  return 0
+}
 
-  if command -v jq >/dev/null 2>&1; then
-    JQ="jq"
-  else
-    JQ="$WORK/jq"
-    if [[ ! -x "$JQ" ]]; then
-      local ja="$arch"
-      [[ "$arch" == "386" ]] && ja="i386"
-      [[ "$arch" == "armv7" ]] && ja="armhf"
-      echo "正在下载 jq 到 $WORK ..."
-      if ! curl -fsSL --retry 2 -o "$JQ" "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$ja"; then
-        echo "${R}jq 下载失败${N}"
-        rm -f "$JQ"
-        return 1
-      fi
-      chmod +x "$JQ"
-    fi
+# 只有去程(选项1)才需要 jq
+ensure_jq() {
+  if command -v jq >/dev/null 2>&1; then JQ="jq"; return 0; fi
+  JQ="$WORK/jq"
+  [[ -x "$JQ" ]] && return 0
+  local ja="$ARCH"
+  [[ "$ARCH" == "386" ]] && ja="i386"
+  [[ "$ARCH" == "armv7" ]] && ja="armhf"
+  echo "正在下载 jq 到 $WORK ..."
+  if ! dl "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$ja" "$JQ"; then
+    echo "${R}jq 下载失败(多次重试)，去程检测暂时无法使用；回程检测不受影响${N}"
+    return 1
   fi
+  chmod +x "$JQ"
   return 0
 }
 
 get_local() {
-  local j
+  local j f
   j=$(curl -s --max-time 8 "http://ip-api.com/json/?lang=zh-CN&fields=query,country,regionName,city,isp")
-  MYIP=$($JQ -r '.query // "未知"' <<<"$j" 2>/dev/null)
-  MYLOC=$($JQ -r '[.country,.regionName,.city] | map(select(. != null and . != "")) | join(" ")' <<<"$j" 2>/dev/null)
-  MYISP=$($JQ -r '.isp // ""' <<<"$j" 2>/dev/null)
+  f() { sed -n 's/.*"'"$1"'":"\([^"]*\)".*/\1/p' <<<"$j"; }
+  MYIP=$(f query)
+  MYLOC="$(f country) $(f regionName) $(f city)"
+  MYISP=$(f isp)
   [[ -z "$MYIP" ]] && MYIP="未知"
+  MYLOC=$(echo $MYLOC)
   [[ -z "$MYLOC" ]] && MYLOC="未知位置"
 }
 
@@ -370,6 +379,7 @@ do_back() {
 # 去程(国内→VPS)必须从国内发起，这里借助 Globalping 公共探针
 do_forward() {
   ensure_env || return
+  ensure_jq || return
   get_local
   clear
   echo "${B}去程检测: 中国 → 本VPS${N}   本机: $MYLOC  $MYIP"
