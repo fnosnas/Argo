@@ -1,6 +1,5 @@
 ```
 cd / && NODE_PORT=20001 SUB_PORT=20002 PUB_NODE_PORT=50001 PUB_SUB_PORT=50002 sh -c "$(curl -fsSL 'https://raw.githubusercontent.com/fnosnas/Argo/main/mini/install.sh')"
-
 ```
 
 如果端口映射是一一对应的（内外一样），可以省掉 PUB_* 两项。  
