@@ -19,7 +19,7 @@
 set -eu
 
 BASE=/opt/aimili-mini
-RAW_BASE="${RAW_BASE:-https://raw.githubusercontent.com/fnosnas/Argo/main/Free%20widening}"
+RAW_BASE="${RAW_BASE:-https://raw.githubusercontent.com/fnosnas/Argo/main/mini}"
 SELF_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd || echo /nonexistent)"
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[0;33m'; N='\033[0m'
 say() { printf "%b\n" "$*"; }
