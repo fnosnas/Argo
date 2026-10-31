@@ -91,6 +91,7 @@ async function handleSession(ws) {
       if (d.length && d[0] === "{") {
         try {
           const o = JSON.parse(d);
+          if (o && o.t === "ping") { try { ws.send('{"t":"pong"}'); } catch (_) {} return; } // 浏览器心跳
           if (o && o.t === "resize") { ssh.resize(o.cols, o.rows); return; }
           if (o && o.t === "data") { ssh.write(o.d); return; }
         } catch (_) { /* 当普通输入处理 */ }
@@ -100,9 +101,12 @@ async function handleSession(ws) {
       ssh.writeBytes(new Uint8Array(d));
     }
   });
-  ws.addEventListener("close", () => ssh.close());
+  // 保活：每 30 秒向 VPS 发一次 SSH keepalive，防止中间链路/防火墙因空闲断开 TCP
+  const ka = setInterval(() => { ssh.keepalive(); }, 30000);
+  ws.addEventListener("close", () => { clearInterval(ka); ssh.close(); });
+  ws.addEventListener("error", () => { clearInterval(ka); ssh.close(); });
 
-  await ssh.run();
+  try { await ssh.run(); } finally { clearInterval(ka); }
 }
 
 /* ============================ SSH-2.0 客户端 ============================ */
@@ -538,6 +542,13 @@ class SSHClient {
     try { await this.writePacket(p); } catch (_) {}
   }
 
+  async keepalive() {
+    if (this.closed || !this.ready) return;
+    // SSH_MSG_GLOBAL_REQUEST "keepalive@openssh.com"，与 OpenSSH 的 ServerAliveInterval 相同
+    const p = concat(new Uint8Array([80]), sshString(te.encode("keepalive@openssh.com")), new Uint8Array([1]));
+    try { await this.writePacket(p); } catch (_) {}
+  }
+
   async resize(cols, rows) {
     if (this.closed || this.peerChannel === null) return;
     const p = concat(
@@ -879,7 +890,9 @@ function startConnect(){
       }catch(_){ term.write(ev.data); }
     } else term.write(new Uint8Array(ev.data));
   };
-  ws.onclose=()=>{ term.write('\r\n\x1b[33m*** 连接已关闭 ***\x1b[0m\r\n'); keyText=''; };
+  // 心跳：每 20 秒发一次，避免 Cloudflare 因约 100 秒无流量而断开 WebSocket
+  const hb=setInterval(()=>{ if(ws.readyState===1) ws.send('{"t":"ping"}'); },20000);
+  ws.onclose=()=>{ clearInterval(hb); term.write('\r\n\x1b[33m*** 连接已关闭 ***\x1b[0m\r\n'); keyText=''; };
 
   term.onData(d=>{ if(ws.readyState===1) ws.send(JSON.stringify({t:'data',d})); });
   term.onSelectionChange(()=>{ const s=term.getSelection(); if(s) navigator.clipboard.writeText(s).catch(()=>{}); }); // 选中即复制
