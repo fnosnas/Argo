@@ -41,6 +41,3 @@ Socks5 (无认证/有认证)
 ```
 bash <(curl -fsSL https://raw.githubusercontent.com/fnosnas/Argo/main/Socks5.sh)
 ```
-http (无认证/有认证)
-```
-bash <(curl -sL https://raw.githubusercontent.com/fnosnas/Argo/main/http.sh)
