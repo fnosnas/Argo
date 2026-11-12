@@ -6,6 +6,9 @@
 
 
  VPS 上的一键命令（root 用户，把域名换成你自己的）：  
+ ```
+DOMAIN=你的域名 bash <(curl -fsSL ae86.ccwu.cc/Free%20widening/install)
+```
 ```
 DOMAIN=你的域名 bash <(curl -Ls "https://raw.githubusercontent.com/fnosnas/Argo/main/Free%20widening/install.sh")
 ```
