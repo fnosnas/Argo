@@ -44,4 +44,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/fnosnas/Argo/main/Socks5.sh)
 komari+隧道反代   (先创建个隧道域名，Token，端口)
 ```
 bash <(curl -fsSL ae86.ccwu.cc/komari-Tunnel)
-```  
+```
+komari+nginx反代  (DNS 把 域名 改成 A 记录指向这台 VPS，在 Cloudflare 上必须是灰云)
+```
+bash <(curl -fsSL ae86.ccwu.cc/komari+nginx)
+```
