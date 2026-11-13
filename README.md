@@ -3,6 +3,10 @@
 VPS线路检测:  
 ```
 bash <(curl -fsSL ae86.ccwu.cc/route)
+```
+komari+隧道
+```
+bash <(curl -fsSL ae86.ccwu.cc/komari)
 ```  
 
 
