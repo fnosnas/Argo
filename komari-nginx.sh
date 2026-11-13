@@ -130,6 +130,13 @@ detect_env(){
     i386|i686)          ARCH="386" ;;
     *) err "不支持的架构: $(uname -m)"; exit 1 ;;
   esac
+
+  if [ "$OS" = "alpine" ] || [ -d /etc/nginx/http.d ]; then
+    NGX_DIR="/etc/nginx/http.d"
+  else
+    NGX_DIR="/etc/nginx/conf.d"
+  fi
+  VHOST="$NGX_DIR/$VHOST_NAME"
 }
 
 # ---------------------------------------------------------------------
@@ -300,7 +307,7 @@ write_vhost(){
       echo "    }"
       echo "}"
     fi
-  } > "$VHOST"
+  } > "$VHOST" || { err "无法写入站点配置: $VHOST"; return 1; }
 }
 
 nginx_reload(){
@@ -696,12 +703,12 @@ do_install(){
   fi
 
   # 阶段 1: 先只开 HTTP, 供 Let's Encrypt 验证域名
-  write_vhost 1
+  write_vhost 1 || return 1
   nginx_reload || return 1
 
   if issue_cert; then
     ok "证书已就绪"
-    write_vhost 2
+    write_vhost 2 || return 1
     nginx_reload || return 1
     setup_renew
     ok "已配置证书自动续期"
