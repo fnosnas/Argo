@@ -47,7 +47,7 @@ bash <(curl -fsSL ae86.ccwu.cc/komari-Tunnel)
 ```
 komari+nginx反代  (DNS 把 域名 改成 A 记录指向这台 VPS，在 Cloudflare 上必须是灰云)
 ```
-bash <(curl -fsSL ae86.ccwu.cc/komari+nginx)
+bash <(curl -fsSL ae86.ccwu.cc/komari-nginx)
 ```
 单Komari  (IP加端口访问) 分别输入以下三条命令:
 ```
