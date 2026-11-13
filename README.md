@@ -49,3 +49,18 @@ komari+nginx反代  (DNS 把 域名 改成 A 记录指向这台 VPS，在 Cloudf
 ```
 bash <(curl -fsSL ae86.ccwu.cc/komari+nginx)
 ```
+单Komari  (IP加端口访问) 分别输入以下三条命令:
+```
+curl -fsSL https://raw.githubusercontent.com/komari-monitor/komari/main/install-komari.sh -o install-komari.sh
+```
+```
+chmod +x install-komari.sh
+```
+```
+sudo ./install-komari.sh
+```
+或者一键命令:
+```
+curl -fsSL https://raw.githubusercontent.com/komari-monitor/komari/main/install-komari.sh -o install-komari.sh && chmod +x install-komari.sh && ./install-komari.sh
+```
+
