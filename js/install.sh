@@ -6,7 +6,7 @@ set -e
 REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/fnosnas/Argo/main/js}"
 APP_DIR="${APP_DIR:-$HOME/node-ws}"
 PM2_NAME="${PM2_NAME:-node-ws}"
-ENV_KEYS="UUID DOMAIN PORT NAME SUB_PATH WSPATH AUTO_ACCESS KOMARI_SERVER KOMARI_TOKEN KOMARI_ARGS GH_PROXY FILE_PATH SHOW_LOG PM2_NAME"
+ENV_KEYS="UUID DOMAIN PORT NAME SUB_PATH WSPATH AUTO_ACCESS KOMARI_SERVER KOMARI_TOKEN KOMARI_DISABLE_SSH SHOW_LOG PM2_NAME"
 
 command -v node >/dev/null 2>&1 || { echo "未找到 node，请先安装 Node.js 16+"; exit 1; }
 command -v npm  >/dev/null 2>&1 || { echo "未找到 npm"; exit 1; }
