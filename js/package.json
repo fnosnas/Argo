@@ -1,0 +1,16 @@
+{
+  "name": "nzws-js",
+  "version": "0.1.0",
+  "description": "nzws-js (komari)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ws": "^8.21.2",
+    "axios": "^1.19.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
