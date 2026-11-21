@@ -22,6 +22,9 @@ const AUTO_ACCESS = process.env.AUTO_ACCESS || false;      // 是否开启自动
 const SUB_PATH = process.env.SUB_PATH || 'sub';            // 订阅token
 const NAME = process.env.NAME || '';                       // 节点名称
 const PORT = process.env.PORT || 3000;                     // http+ws端口
+const TLS_MODE = /^(1|true|yes|on)$/i.test(process.env.TLS || '');  // 可选：true 时由本程序直接开 TLS（平台只给 IP+端口时用）
+const TLS_CERT = process.env.TLS_CERT || '';               // 可选：证书，文件路径或 PEM 内容；不填则自动生成自签证书
+const TLS_KEY = process.env.TLS_KEY || '';                 // 可选：私钥，文件路径或 PEM 内容
 const USE_PM2 = /^(1|true|yes)$/i.test(process.env.USE_PM2 || ''); // 可选：true 时自动交给 pm2 常驻（容器平台不要开）
 const PM2_NAME = process.env.PM2_NAME || 'node-ws';        // pm2 进程名
 
@@ -70,6 +73,13 @@ async function getisp() {
 
 // 获取ip
 async function getip() {
+  if (TLS_MODE) {
+    // 本程序自己开 TLS：直连 域名或IP:PORT，走 tls
+    let host = (DOMAIN && DOMAIN !== 'your-domain.com') ? DOMAIN : '';
+    if (!host) { try { host = String((await axios.get('https://api-ipv4.ip.sb/ip', { timeout: 5000 })).data).trim(); } catch (e) { host = 'cahnge-your-domain.com'; } }
+    CurrentDomain = host, Tls = 'tls', CurrentPort = PORT;
+    return;
+  }
   if (!DOMAIN || DOMAIN === 'your-domain.com') {
       try {
           const res = await axios.get('https://api-ipv4.ip.sb/ip', { timeout: 5000 });
@@ -85,7 +95,7 @@ async function getip() {
 }
 
 // HTTP 路由
-const httpServer = http.createServer(async (req, res) => {
+async function requestHandler(req, res) {
   try { if (await tgRoute(req, res)) return; } catch (e) { console.error('[TG] route error:', e.message); }
   if (req.url === '/') {
     const filePath = path.join(__dirname, 'index.html');
@@ -103,9 +113,10 @@ const httpServer = http.createServer(async (req, res) => {
     await getisp();await getip();
     const namePart = NAME ? `${NAME}-${ISP}` : ISP;
     const tlsParam = Tls === 'tls' ? 'tls' : 'none';
+    const insecure = TLS_MODE && tlsSelfSigned ? '&allowInsecure=1&insecure=1' : '';
     const ssTlsParam = Tls === 'tls' ? 'tls;' : '';
-    const vlsURL = `vless://${UUID}@${CurrentDomain}:${CurrentPort}?encryption=none&security=${tlsParam}&sni=${CurrentDomain}&fp=chrome&type=ws&host=${CurrentDomain}&path=%2F${WSPATH}#${namePart}`;
-    const troURL = `trojan://${UUID}@${CurrentDomain}:${CurrentPort}?security=${tlsParam}&sni=${CurrentDomain}&fp=chrome&type=ws&host=${CurrentDomain}&path=%2F${WSPATH}#${namePart}`;
+    const vlsURL = `vless://${UUID}@${CurrentDomain}:${CurrentPort}?encryption=none&security=${tlsParam}&sni=${CurrentDomain}&fp=chrome${insecure}&type=ws&host=${CurrentDomain}&path=%2F${WSPATH}#${namePart}`;
+    const troURL = `trojan://${UUID}@${CurrentDomain}:${CurrentPort}?security=${tlsParam}&sni=${CurrentDomain}&fp=chrome${insecure}&type=ws&host=${CurrentDomain}&path=%2F${WSPATH}#${namePart}`;
     const ssMethodPassword = Buffer.from(`none:${UUID}`).toString('base64');
     const ssURL = `ss://${ssMethodPassword}@${CurrentDomain}:${CurrentPort}?plugin=v2ray-plugin;mode%3Dwebsocket;host%3D${CurrentDomain};path%3D%2F${WSPATH};${ssTlsParam}sni%3D${CurrentDomain};skip-cert-verify%3Dtrue;mux%3D0#${namePart}`;
     const subscription = vlsURL + '\n' + troURL + '\n' + ssURL;
@@ -122,7 +133,8 @@ const httpServer = http.createServer(async (req, res) => {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not Found\n');
   }
-});
+}
+const httpServer = http.createServer(requestHandler);
 
 // Custom DNS
 function resolveHost(host) {
@@ -280,7 +292,7 @@ function handleSsConnection(ws, msg) {
 // Ws handler
 const wss = new WebSocket.Server({ noServer: true });
 // WS 路径分发：/${WSPATH} -> vless/trojan/ss；/api/v1/ws -> Telegram WEB Proxy
-httpServer.on('upgrade', (req, socket, head) => {
+function upgradeHandler(req, socket, head) {
   const url = req.url || '';
   if (url === '/api/v1/ws') {
     tgWsUpgrade(req, socket, head);
@@ -289,7 +301,8 @@ httpServer.on('upgrade', (req, socket, head) => {
   } else {
     socket.destroy();
   }
-});
+}
+httpServer.on('upgrade', upgradeHandler);
 wss.on('connection', (ws, req) => {
   const url = req.url || '';
   const expectedPath = `/${WSPATH}`;
@@ -1754,8 +1767,94 @@ async function tgWsUpgrade(req, socket, head) {
 // 启动服务
 if (handoffToPm2()) process.exit(0);
 
-httpServer.listen(PORT, () => {
+
+// ==================== TLS（可选，TLS=true 开启） ====================
+// 同一个端口同时接受 HTTP 和 HTTPS：首字节 0x16 是 TLS 握手，交给 https；否则交给 http
+// 这样平台的健康检查、AUTO_ACCESS 用 http 访问也不受影响
+let tlsSelfSigned = false;
+
+function readPem(v) {
+  if (!v) return '';
+  if (v.includes('-----BEGIN')) return v.replace(/\\n/g, '\n');
+  try { return fs.readFileSync(v, 'utf8'); } catch (e) { return ''; }
+}
+
+// 纯 JS 生成自签证书（EC P-256 + SHA256），不依赖 openssl 或其他包
+function derLen(n) {
+  if (n < 0x80) return Buffer.from([n]);
+  const b = []; while (n > 0) { b.unshift(n & 0xff); n >>= 8; }
+  return Buffer.from([0x80 | b.length, ...b]);
+}
+function der(tag, ...parts) { const body = Buffer.concat(parts); return Buffer.concat([Buffer.from([tag]), derLen(body.length), body]); }
+const derSeq = (...p) => der(0x30, ...p);
+function derOid(oid) {
+  const a = oid.split('.').map(Number), out = [40 * a[0] + a[1]];
+  for (const n of a.slice(2)) { const t = [n & 0x7f]; let v = n >> 7; while (v > 0) { t.unshift((v & 0x7f) | 0x80); v >>= 7; } out.push(...t); }
+  return der(0x06, Buffer.from(out));
+}
+function derInt(buf) { if (buf[0] & 0x80) buf = Buffer.concat([Buffer.from([0]), buf]); return der(0x02, buf); }
+function derTime(d) { const s = d.toISOString().replace(/[-:T]/g, '').slice(0, 14) + 'Z'; return d.getUTCFullYear() < 2050 ? der(0x17, Buffer.from(s.slice(2))) : der(0x18, Buffer.from(s)); }
+
+function ipv6Bytes(ip) {
+  const [l, r = ''] = ip.split('::');
+  const L = l ? l.split(':') : [], R = r ? r.split(':') : [];
+  const parts = ip.includes('::') ? [...L, ...Array(8 - L.length - R.length).fill('0'), ...R] : L;
+  const b = Buffer.alloc(16); parts.forEach((h, i) => b.writeUInt16BE(parseInt(h, 16) || 0, i * 2)); return b;
+}
+
+function genSelfSigned(host) {
+  const { privateKey, publicKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const spki = publicKey.export({ type: 'spki', format: 'der' });
+  const sigAlg = derSeq(derOid('1.2.840.10045.4.3.2'));
+  const name = derSeq(der(0x31, derSeq(derOid('2.5.4.3'), der(0x0c, Buffer.from(host)))));
+  const now = new Date(Date.now() - 86400000), end = new Date(Date.now() + 3650 * 86400000);
+  const san = net.isIP(host)
+    ? der(0x87, net.isIPv4(host) ? Buffer.from(host.split('.').map(Number)) : ipv6Bytes(host))
+    : der(0x82, Buffer.from(host));
+  const ext = der(0xa3, derSeq(derSeq(derOid('2.5.29.17'), der(0x04, derSeq(san)))));
+  const tbs = derSeq(der(0xa0, derInt(Buffer.from([2]))), derInt(crypto.randomBytes(16)), sigAlg, name, derSeq(derTime(now), derTime(end)), name, spki, ext);
+  const sig = crypto.sign('sha256', tbs, privateKey);
+  const cert = derSeq(tbs, sigAlg, der(0x03, Buffer.concat([Buffer.from([0]), sig])));
+  const pem = '-----BEGIN CERTIFICATE-----\n' + cert.toString('base64').match(/.{1,64}/g).join('\n') + '\n-----END CERTIFICATE-----\n';
+  return { cert: pem, key: privateKey.export({ type: 'pkcs8', format: 'pem' }) };
+}
+
+function loadTlsOptions(host) {
+  const cert = readPem(TLS_CERT), key = readPem(TLS_KEY);
+  if (cert && key) { tlsSelfSigned = false; log('[TLS] 使用自备证书'); return { cert, key }; }
+  tlsSelfSigned = true;
+  const dir = path.join(__dirname, '.tls'), cf = path.join(dir, 'cert.pem'), kf = path.join(dir, 'key.pem'), hf = path.join(dir, 'host');
+  try { if (readText(hf).trim() === host) { const c = fs.readFileSync(cf, 'utf8'), k = fs.readFileSync(kf, 'utf8'); if (c && k) return { cert: c, key: k }; } } catch (e) { }
+  const pair = genSelfSigned(host);
+  try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(cf, pair.cert); fs.writeFileSync(kf, pair.key, { mode: 0o600 }); fs.writeFileSync(hf, host); } catch (e) { } // 只读目录就只放内存
+  log('[TLS] 已生成自签证书:', host);
+  return pair;
+}
+
+async function startServer() {
+  if (!TLS_MODE) return httpServer.listen(PORT, onListening);
+  await getip();
+  let opts;
+  try { opts = loadTlsOptions(CurrentDomain); } catch (e) { logErr('[TLS] 证书失败，改为不加密:', e.message); return httpServer.listen(PORT, onListening); }
+  const httpsServer = https.createServer(opts, requestHandler);
+  httpsServer.on('upgrade', upgradeHandler);
+  httpsServer.on('tlsClientError', () => { });
+  const front = net.createServer((socket) => {
+    socket.once('error', () => socket.destroy());
+    socket.once('readable', () => {
+      const head = socket.read(1);
+      if (!head) return socket.destroy();
+      socket.unshift(head);
+      (head[0] === 0x16 ? httpsServer : httpServer).emit('connection', socket);
+    });
+  });
+  front.listen(PORT, onListening);
+}
+
+function onListening() {
   startKomariAgent().catch(err => console.error('error', err));
   addAccessTask();
-  console.log(`Server is running on ${PORT}`);
-});
+  console.log(`Server is running on ${PORT}${TLS_MODE ? ' (http + tls)' : ''}`);
+}
+
+startServer().catch(e => console.error('start error', e));
