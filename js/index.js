@@ -32,7 +32,8 @@ const PORT = process.env.PORT || 3000;                     // http+ws端口
 const RETRY_DELAY = 10000;      // agent 退出后重启间隔（连续失败逐步加长）
 
 // 日志控制 
-const SHOW_LOG = !!(process.env.SHOW_LOG);
+const SHOW_LOG = /^(1|true|yes)$/i.test(process.env.SHOW_LOG || '');   // 默认关闭所有日志，SHOW_LOG=1 才输出
+if (!SHOW_LOG) { const noop = () => {}; console.log = console.info = console.warn = console.error = console.debug = noop; }
 function log(...args) { if (SHOW_LOG) console.log(...args); }
 function logErr(...args) { if (SHOW_LOG) console.error(...args); }
 function logWarn(...args) { if (SHOW_LOG) console.warn(...args); }
@@ -441,13 +442,13 @@ function handoffToPm2() {
   if (hasCmd('pm2')) pm2 = ['pm2'];
   else {
     console.log('[PM2] 未安装，尝试 npm i -g pm2 ...');
-    spawnSync('npm', ['i', '-g', 'pm2'], { stdio: 'inherit', timeout: 180000, shell: process.platform === 'win32' });
+    spawnSync('npm', ['i', '-g', 'pm2'], { stdio: SHOW_LOG ? 'inherit' : 'ignore', timeout: 180000, shell: process.platform === 'win32' });
     if (hasCmd('pm2')) pm2 = ['pm2'];
     else if (hasCmd('npx', ['--yes', 'pm2', '-v'])) pm2 = ['npx', '--yes', 'pm2'];
   }
   if (!pm2) { console.error('[PM2] 装不上 pm2，改为直接运行'); return false; }
   const [cmd, ...pre] = pm2;
-  const run = (a) => spawnSync(cmd, [...pre, ...a], { stdio: 'inherit', shell: process.platform === 'win32' });
+  const run = (a) => spawnSync(cmd, [...pre, ...a], { stdio: SHOW_LOG ? 'inherit' : 'ignore', shell: process.platform === 'win32' });
   run(['delete', PM2_NAME]);
   const r = run(['start', __filename, '--name', PM2_NAME, '--cwd', __dirname, '--update-env']);
   if (r.status !== 0) { console.error('[PM2] pm2 启动失败，改为直接运行'); return false; }
