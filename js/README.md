@@ -54,3 +54,27 @@ DOMAIN=nos.indevs.in
 
 在「网络」设置里确认 WebSockets 是打开的（默认就是开的）   
 节点里的地址可以换成优选 IP或优选域名，SNI 和 host 保持 nos.indevs.in 就行   
+
+
+cloudflare Workers 反代
+```
+export default {
+    async fetch(request, env) {
+        let url = new URL(request.url);
+        if (url.pathname.startsWith('/')) {
+            var arrStr = [
+                '', // 此处单引号里填写你的节点伪装域名
+            ];
+            url.protocol = 'https:'
+            url.hostname = getRandomArray(arrStr)
+            let new_request = new Request(url, request);
+            return fetch(new_request);
+        }
+        return env.ASSETS.fetch(request);
+    },
+};
+function getRandomArray(array) {
+  const randomIndex = Math.floor(Math.random() * array.length);
+  return array[randomIndex];
+}
+```
