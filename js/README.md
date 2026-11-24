@@ -1,7 +1,7 @@
 一键安装命令
 Bash
 ```
-UUID=你的UUID KOMARI_SERVER=https://你的komari域名 KOMARI_TOKEN=你的token PORT=3000 DOMAIN=你的域名 \
+KOMARI_SERVER=https://你的komari域名 KOMARI_TOKEN=你的token PORT=3000 DOMAIN=你的域名 \
 bash <(curl -Ls https://raw.githubusercontent.com/fnosnas/Argo/main/js/install.sh)
 ```
 
