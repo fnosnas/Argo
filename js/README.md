@@ -11,6 +11,10 @@ Alpine 等没有 bash 的容器，前面加 apk add：
 ```
 apk add --no-cache bash curl && KOMARI_SERVER=你的面板地址 KOMARI_TOKEN=你的token DOMAIN=xxx.xxx.com PORT=3000 bash <(curl -Ls https://raw.githubusercontent.com/fnosnas/Argo/main/js/install.sh )
 ```
+一键卸载
+```
+bash <(curl -Ls raw.githubusercontent.com/fnosnas/Argo/main/js/uninstall.sh)
+```
 
 
 TLS 开关说明
