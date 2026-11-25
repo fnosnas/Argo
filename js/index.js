@@ -17,7 +17,7 @@ const { WebSocket, createWebSocketStream } = require('ws');
 const UUID = process.env.UUID || 'd1cf4b9c-3e57-085d-b34a-797fcf801380'; // 节点UUID、tg-webproxy的secret
 const KOMARI_SERVER = process.env.KOMARI_SERVER || '';     // komari面板地址，格式：https://km.xxx.com
 const KOMARI_TOKEN = process.env.KOMARI_TOKEN || '';       // komari面板里该服务器的token
-const DOMAIN = process.env.DOMAIN || 'your-domain.com';    // 项目分配的域名或回源后的域名,例如：xxx.xxx.com
+const DOMAIN = process.env.DOMAIN || '';    // 项目分配的域名或回源后的域名,例如：xxx.xxx.com
 const AUTO_ACCESS = process.env.AUTO_ACCESS || false;      // 是否开启自动访问保活，需确保DOMAIN可用
 const SUB_PATH = process.env.SUB_PATH || 'sub';            // 订阅token
 const NAME = process.env.NAME || '';                       // 节点名称
@@ -72,25 +72,19 @@ async function getisp() {
 }
 
 // 获取ip
+// 填了 DOMAIN：域名走 Cloudflare 等 CDN 回源，订阅固定 域名:443 + tls，证书由 CDN 提供，不跳过证书验证
+// 没填 DOMAIN：用本机公网 IP:PORT（TLS_MODE 时为自签证书，订阅里自动带跳过证书验证）
+let UseDomain = false;
 async function getip() {
-  if (TLS_MODE) {
-    // 本程序自己开 TLS：直连 域名或IP:PORT，走 tls
-    let host = (DOMAIN && DOMAIN !== 'your-domain.com') ? DOMAIN : '';
-    if (!host) { try { host = String((await axios.get('https://api-ipv4.ip.sb/ip', { timeout: 5000 })).data).trim(); } catch (e) { host = 'cahnge-your-domain.com'; } }
-    CurrentDomain = host, Tls = 'tls', CurrentPort = PORT;
-    return;
-  }
-  if (!DOMAIN || DOMAIN === 'your-domain.com') {
-      try {
-          const res = await axios.get('https://api-ipv4.ip.sb/ip', { timeout: 5000 });
-          const ip = res.data.trim();
-          CurrentDomain = ip, Tls = 'none', CurrentPort = PORT;
-      } catch (e) {
-          console.error('Failed to get IP', e.message);
-          CurrentDomain = 'cahnge-your-domain.com', Tls = 'tls', CurrentPort = 443;
-      }
-  } else {
-      CurrentDomain = DOMAIN, Tls = 'tls', CurrentPort = 443;
+  const host = (DOMAIN && DOMAIN !== 'your-domain.com') ? DOMAIN : '';
+  if (host) { UseDomain = true; CurrentDomain = host; Tls = 'tls'; CurrentPort = 443; return; }
+  UseDomain = false;
+  try {
+    const ip = String((await axios.get('https://api-ipv4.ip.sb/ip', { timeout: 5000 })).data).trim();
+    CurrentDomain = ip; Tls = TLS_MODE ? 'tls' : 'none'; CurrentPort = PORT;
+  } catch (e) {
+    console.error('Failed to get IP', e.message);
+    CurrentDomain = 'cahnge-your-domain.com'; Tls = 'tls'; CurrentPort = 443;
   }
 }
 
@@ -113,13 +107,10 @@ async function requestHandler(req, res) {
     await getisp();await getip();
     const namePart = NAME ? `${NAME}-${ISP}` : ISP;
     const tlsParam = Tls === 'tls' ? 'tls' : 'none';
-    const insecure = TLS_MODE && tlsSelfSigned ? '&allowInsecure=1&insecure=1' : '';
-    const ssTlsParam = Tls === 'tls' ? 'tls;' : '';
+    // 只有 IP 直连 + 自签证书时才跳过证书验证；走域名时 allowInsecure 保持 false
+    const insecure = (!UseDomain && TLS_MODE && tlsSelfSigned) ? '&allowInsecure=1&insecure=1' : '';
     const vlsURL = `vless://${UUID}@${CurrentDomain}:${CurrentPort}?encryption=none&security=${tlsParam}&sni=${CurrentDomain}&fp=chrome${insecure}&type=ws&host=${CurrentDomain}&path=%2F${WSPATH}#${namePart}`;
-    const troURL = `trojan://${UUID}@${CurrentDomain}:${CurrentPort}?security=${tlsParam}&sni=${CurrentDomain}&fp=chrome${insecure}&type=ws&host=${CurrentDomain}&path=%2F${WSPATH}#${namePart}`;
-    const ssMethodPassword = Buffer.from(`none:${UUID}`).toString('base64');
-    const ssURL = `ss://${ssMethodPassword}@${CurrentDomain}:${CurrentPort}?plugin=v2ray-plugin;mode%3Dwebsocket;host%3D${CurrentDomain};path%3D%2F${WSPATH};${ssTlsParam}sni%3D${CurrentDomain};skip-cert-verify%3Dtrue;mux%3D0#${namePart}`;
-    const subscription = vlsURL + '\n' + troURL + '\n' + ssURL;
+    const subscription = vlsURL;
     const base64Content = Buffer.from(subscription).toString('base64');
 
     res.writeHead(200, { 'Content-Type': 'text/plain' });
