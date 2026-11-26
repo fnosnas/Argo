@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepSeek Harness 引导与十大必装插件指南</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            900: '#312e81',
+                        },
+                        dark: {
+                            bg: '#0b0f19',
+                            card: '#111827',
+                            border: '#1f2937'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0b0f19;
+            color: #f3f4f6;
+        }
+        .glow-effect {
+            box-shadow: 0 0 50px -10px rgba(99, 102, 241, 0.25);
+        }
+        .card-hover {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .card-hover:hover {
+            transform: translateY(-4px);
+            border-color: rgba(99, 102, 241, 0.5);
+            box-shadow: 0 10px 30px -10px rgba(99, 102, 241, 0.3);
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0b0f19;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1f2937;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #374151;
+        }
+    </style>
+</head>
+<body class="bg-dark-bg min-h-screen text-slate-100 flex flex-col selection:bg-brand-500 selection:text-white">
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-3 text-sm font-medium border border-emerald-500">
+        <i class="fa-solid fa-circle-check text-lg"></i>
+        <span id="toast-msg">复制成功！</span>
+    </div>
+
+    <!-- Navigation Bar -->
+    <header class="sticky top-0 z-40 backdrop-blur-md bg-dark-bg/80 border-b border-dark-border">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-400 flex items-center justify-center shadow-lg shadow-brand-500/30">
+                    <i class="fa-solid fa-network-wired text-white text-lg"></i>
+                </div>
+                <div>
+                    <span class="font-bold text-xl tracking-tight bg-gradient-to-r from-white via-indigo-200 to-indigo-400 bg-clip-text text-transparent">DeepSeek Harness</span>
+                    <span class="hidden sm:inline-block ml-2 px-2 py-0.5 text-xs font-semibold bg-brand-500/10 text-brand-400 rounded-full border border-brand-500/20">v0.1 Preview</span>
+                </div>
+            </div>
+            <nav class="hidden md:flex items-center space-x-8 text-sm font-medium text-slate-300">
+                <a href="#overview" class="hover:text-white transition">核心概念</a>
+                <a href="#install" class="hover:text-white transition">安装教程</a>
+                <a href="#plugins" class="hover:text-white transition">十大必装插件</a>
+                <a href="#modes" class="hover:text-white transition">运行模式</a>
+            </nav>
+            <div class="flex items-center space-x-4">
+                <a href="https://github.com/deepseek-ai/deepseek-harness" target="_blank" class="hidden sm:flex items-center space-x-2 bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-xl text-sm font-medium border border-slate-700 transition">
+                    <i class="fa-brands fa-github text-base"></i>
+                    <span>GitHub 仓库</span>
+                </a>
+                <a href="#install" class="bg-gradient-to-r from-brand-600 to-indigo-500 hover:from-brand-500 hover:to-indigo-400 text-white px-5 py-2 rounded-xl text-sm font-medium shadow-lg shadow-brand-600/30 transition">
+                    快速上手
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="relative overflow-hidden pt-20 pb-24 lg:pt-32 lg:pb-36 border-b border-dark-border">
+        <div class="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(99,102,241,0.15),rgba(255,255,255,0))]"></div>
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
+            <div class="inline-flex items-center space-x-2 px-3 py-1.5 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-400 text-xs font-semibold mb-6 animate-pulse">
+                <i class="fa-solid fa-bolt"></i>
+                <span>一切皆插件架构 • 智能体运行时平台</span>
+            </div>
+            <h1 class="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight max-w-4xl mx-auto leading-tight">
+                掌握 <span class="bg-gradient-to-r from-brand-400 via-indigo-300 to-cyan-400 bg-clip-text text-transparent">DeepSeek Harness</span>
+                <br>构建你的专属 AI 智能体工作流
+            </h1>
+            <p class="mt-6 text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed">
+                DeepSeek Harness（dsh）是一个开创性的开源 AI Agent 运行时。模型只是大脑，而 Harness 赋予它工具、沙箱、会话记忆与强大的插件生态。
+            </p>
+            <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+                <a href="#install" class="w-full sm:w-auto px-8 py-4 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-500 text-white font-semibold text-base shadow-xl shadow-brand-500/25 hover:shadow-brand-500/40 hover:scale-[1.02] transition">
+                    <i class="fa-solid fa-terminal mr-2"></i> 一键开始安装
+                </a>
+                <a href="#plugins" class="w-full sm:w-auto px-8 py-4 rounded-xl bg-dark-card hover:bg-slate-800 text-slate-200 font-semibold text-base border border-dark-border transition">
+                    <i class="fa-solid fa-puzzle-piece mr-2 text-brand-400"></i> 探索十大必装插件
+                </a>
+            </div>
+
+            <!-- Terminal Preview Box -->
+            <div class="mt-16 max-w-3xl mx-auto rounded-2xl bg-dark-card border border-dark-border shadow-2xl overflow-hidden text-left">
+                <div class="bg-slate-900 px-4 py-3 border-b border-dark-border flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-3 h-3 rounded-full bg-rose-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-amber-500"></div>
+                        <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+                        <span class="ml-2 text-xs text-slate-400 font-mono">bash — dsh web</span>
+                    </div>
+                    <button onclick="copyCode('npx @deepseek-ai/dsh web')" class="text-xs text-slate-400 hover:text-white flex items-center space-x-1 bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700 transition">
+                        <i class="fa-regular fa-copy"></i>
+                        <span>复制</span>
+                    </button>
+                </div>
+                <div class="p-6 font-mono text-sm sm:text-base text-emerald-400 overflow-x-auto space-y-2">
+                    <div class="text-slate-500"># 安装 Node.js 后直接在终端运行以下命令：</div>
+                    <div class="flex items-center justify-between">
+                        <span>$ npx @deepseek-ai/dsh web</span>
+                    </div>
+                    <div class="text-slate-300 text-xs sm:text-sm">
+                        <span class="text-indigo-400">[Cordis Kernel]</span> Initializing plugins...<br>
+                        <span class="text-indigo-400">[DSH Web Server]</span> Running local Web UI at <span class="underline">http://127.0.0.1:3080</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Overview Section -->
+    <section id="overview" class="py-20 bg-dark-bg border-b border-dark-border">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center max-w-3xl mx-auto">
+                <h2 class="text-3xl sm:text-4xl font-bold tracking-tight">为什么选择 DeepSeek Harness？</h2>
+                <p class="mt-4 text-slate-400 text-base sm:text-lg">告别臃肿且封闭的固定编码助手，拥抱基于 Cordis 内核的模块化架构。</p>
+            </div>
+            <div class="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div class="p-8 rounded-2xl bg-dark-card border border-dark-border card-hover">
+                    <div class="w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400 flex items-center justify-center text-xl mb-6">
+                        <i class="fa-solid fa-cubes"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-white">一切皆插件</h3>
+                    <p class="mt-3 text-slate-400 text-sm leading-relaxed">
+                        模型、工具、技能、会话、沙箱、存储甚至 UI 都可以作为可替换的插件加载。通过 YAML 配置文件灵活编排，无需修改源码。
+                    </p>
+                </div>
+                <div class="p-8 rounded-2xl bg-dark-card border border-dark-border card-hover">
+                    <div class="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center text-xl mb-6">
+                        <i class="fa-solid fa-microchip"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-white">模型无关性</h3>
+                    <p class="mt-3 text-slate-400 text-sm leading-relaxed">
+                        完美支持 DeepSeek、Anthropic、OpenAI、Amazon Bedrock 以及任何兼容 OpenAI 接口的端点。自由切换模型，而运行逻辑保持不变。
+                    </p>
+                </div>
+                <div class="p-8 rounded-2xl bg-dark-card border border-dark-border card-hover">
+                    <div class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl mb-6">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-white">会话与轨迹视图</h3>
+                    <p class="mt-3 text-slate-400 text-sm leading-relaxed">
+                        每个运行状态都记录在追加写入的会话日志中，支持会话恢复、分叉（fork）、搜索、重放及直观的轨迹视图。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Installation Tutorial Section -->
+    <section id="install" class="py-20 bg-dark-bg border-b border-dark-border">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center max-w-3xl mx-auto mb-16">
+                <span class="text-brand-400 text-sm font-semibold tracking-wider uppercase">Installation Guide</span>
+                <h2 class="text-3xl sm:text-4xl font-bold tracking-tight mt-2">保姆级安装教程</h2>
+                <p class="mt-4 text-slate-400">仅需几个简单步骤，即可在本地搭建功能强大的 DeepSeek Harness 开发环境。</p>
+            </div>
+
+            <div class="space-y-8">
+                <!-- Step 1 -->
+                <div class="p-6 sm:p-8 rounded-2xl bg-dark-card border border-dark-border flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                    <div class="flex items-start space-x-4">
+                        <div class="w-10 h-10 rounded-xl bg-brand-600 text-white font-bold flex items-center justify-center shrink-0">1</div>
+                        <div>
+                            <h3 class="text-lg font-bold text-white">安装 Node.js 环境</h3>
+                            <p class="text-slate-400 text-sm mt-1">DeepSeek Harness 依赖现代 Node.js 运行环境，推荐使用 LTS 版本 (Node.js 20+)。</p>
+                        </div>
+                    </div>
+                    <div class="w-full md:w-auto bg-slate-900 px-4 py-2.5 rounded-xl border border-dark-border flex items-center justify-between space-x-4 font-mono text-sm">
+                        <span class="text-indigo-300">node -v # 验证版本 >= 20</span>
+                        <a href="https://nodejs.org" target="_blank" class="text-xs text-brand-400 hover:underline">官网下载 <i class="fa-solid fa-arrow-up-right-from-square ml-1"></i></a>
+                    </div>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="p-6 sm:p-8 rounded-2xl bg-dark-card border border-dark-border flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                    <div class="flex items-start space-x-4">
+                        <div class="w-10 h-10 rounded-xl bg-brand-600 text-white font-bold flex items-center justify-center shrink-0">2</div>
+                        <div>
+                            <h3 class="text-lg font-bold text-white">全局安装 Harness 与包管理器</h3>
+                            <p class="text-slate-400 text-sm mt-1">安装核心 CLI 工具以及插件管理所需的 pnpm。</p>
+                        </div>
+                    </div>
+                    <div class="w-full md:w-auto bg-slate-900 px-4 py-2.5 rounded-xl border border-dark-border flex items-center justify-between space-x-4 font-mono text-sm">
+                        <span class="text-emerald-400">npm install -g @deepseek-ai/dsh pnpm</span>
+                        <button onclick="copyCode('npm install -g @deepseek-ai/dsh pnpm')" class="text-slate-400 hover:text-white transition"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+
+                <!-- Step 3 -->
+                <div class="p-6 sm:p-8 rounded-2xl bg-dark-card border border-dark-border flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                    <div class="flex items-start space-x-4">
+                        <div class="w-10 h-10 rounded-xl bg-brand-600 text-white font-bold flex items-center justify-center shrink-0">3</div>
+                        <div>
+                            <h3 class="text-lg font-bold text-white">配置 API 密钥环境变量</h3>
+                            <p class="text-slate-400 text-sm mt-1">设置您的 DeepSeek API Key（也可在网页端设置）。</p>
+                        </div>
+                    </div>
+                    <div class="w-full md:w-auto bg-slate-900 px-4 py-2.5 rounded-xl border border-dark-border flex items-center justify-between space-x-4 font-mono text-sm">
+                        <span class="text-amber-400">export DEEPSEEK_API_KEY="your_key_here"</span>
+                        <button onclick="copyCode('export DEEPSEEK_API_KEY=\"your_key_here\"')" class="text-slate-400 hover:text-white transition"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+
+                <!-- Step 4 -->
+                <div class="p-6 sm:p-8 rounded-2xl bg-dark-card border border-dark-border flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                    <div class="flex items-start space-x-4">
+                        <div class="w-10 h-10 rounded-xl bg-brand-600 text-white font-bold flex items-center justify-center shrink-0">4</div>
+                        <div>
+                            <h3 class="text-lg font-bold text-white">启动本地 Web UI 界面</h3>
+                            <p class="text-slate-400 text-sm mt-1">执行命令启动内置服务器，并在浏览器访问 <code class="text-indigo-300">http://127.0.0.1:3080</code>。</p>
+                        </div>
+                    </div>
+                    <div class="w-full md:w-auto bg-slate-900 px-4 py-2.5 rounded-xl border border-dark-border flex items-center justify-between space-x-4 font-mono text-sm">
+                        <span class="text-emerald-400">npx @deepseek-ai/dsh web</span>
+                        <button onclick="copyCode('npx @deepseek-ai/dsh web')" class="text-slate-400 hover:text-white transition"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Top 10 Plugins Section -->
+    <section id="plugins" class="py-20 bg-dark-bg border-b border-dark-border">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col md:flex-row md:items-end justify-between mb-16">
+                <div>
+                    <span class="text-brand-400 text-sm font-semibold tracking-wider uppercase">Ecosystem & Extensions</span>
+                    <h2 class="text-3xl sm:text-4xl font-bold tracking-tight mt-2">DeepSeek Harness 十大必装插件</h2>
+                    <p class="mt-4 text-slate-400">精选扩展插件，全面提升开发工作流、界面体验、持久化记忆与多模态能力。</p>
+                </div>
+                <div class="mt-6 md:mt-0">
+                    <input type="text" id="pluginSearch" placeholder="搜索插件名称或功能..." onkeyup="filterPlugins()" class="w-full md:w-72 bg-dark-card border border-dark-border rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition">
+                </div>
+            </div>
+
+            <!-- Plugin Grid -->
+            <div id="pluginGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                
+                <!-- Plugin 1 -->
+                <div class="plugin-card p-8 rounded-2xl bg-dark-card border border-dark-border card-hover flex flex-col justify-between" data-name="dsh-web 增强工作空间">
+                    <div>
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-window-maximize"></i>
+                            </div>
+                            <span class="text-xs font-semibold px-2.5 py-1 bg-blue-500/10 text-blue-400 rounded-full border border-blue-500/20">UI 扩展</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">1. dsh-web 工作空间增强</h3>
+                        <p class="mt-3 text-slate-400 text-sm leading-relaxed">
+                            扩展官方 Web 档案，集成任务管理、移动端适配、SSH 远程操作、Git 可视化及资源监控面板，将复杂工作流整合至统一面板。
+                        </p>
+                    </div>
+                    <div class="mt-8 pt-4 border-t border-dark-border flex items-center justify-between font-mono text-xs text-indigo-300">
+                        <span>dsh plugin add @dsh/web-ext</span>
+                        <button onclick="copyCode('dsh plugin add @dsh/web-ext')" class="text-slate-400 hover:text-white transition"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+
+                <!-- Plugin 2 -->
+                <div class="plugin-card p-8 rounded-2xl bg-dark-card border border-dark-border card-hover flex flex-col justify-between" data-name="dsh-better-sidebar 侧边栏工作台">
+                    <div>
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-sidebar"></i>
+                            </div>
+                            <span class="text-xs font-semibold px-2.5 py-1 bg-indigo-500/10 text-indigo-400 rounded-full border border-indigo-500/20">开发效率</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">2. DSH-better-sidebar 侧边栏工作台</h3>
+                        <p class="mt-3 text-slate-400 text-sm leading-relaxed">
+                            将原生侧边栏转变为全功能开发工作台，完美嵌入文件树、编辑器、Git 活动监控、内置终端及网页预览，减少 supervision 摩擦。
+                        </p>
+                    </div>
+                    <div class="mt-8 pt-4 border-t border-dark-border flex items-center justify-between font-mono text-xs text-indigo-300">
+                        <span>dsh plugin add @dsh/better-sidebar</span>
+                        <button onclick="copyCode('dsh plugin add @dsh/better-sidebar')" class="text-slate-400 hover:text-white transition"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+
+                <!-- Plugin 3 -->
+                <div class="plugin-card p-8 rounded-2xl bg-dark-card border border-dark-border card-hover flex flex-col justify-between" data-name="dsh-tui 终端优先界面">
+                    <div>
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-terminal"></i>
+                            </div>
+                            <span class="text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20">终端控制</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">3. dsh-TUI 终端优先界面</h3>
+                        <p class="mt-3 text-slate-400 text-sm leading-relaxed">
+                            为 DeepSeek Harness 提供类似 Claude Code 的终端前端，支持流式 Markdown、工具调用卡片、会话恢复与上下文状态显示。
+                        </p>
+                    </div>
+                    <div class="mt-8 pt-4 border-t border-dark-border flex items-center justify-between font-mono text-xs text-indigo-300">
+                        <span>dsh plugin add @dsh/tui</span>
+                        <button onclick="copyCode('dsh plugin add @dsh/tui')" class="text-slate-400 hover:text-white transition"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+
+                <!-- Plugin 4 -->
+                <div class="plugin-card p-8 rounded-2xl bg-dark-card border border-dark-border card-hover flex flex-col justify-between" data-name="openviking memory 跨会话持久记忆">
+                    <div>
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-brain"></i>
+                            </div>
+                            <span class="text-xs font-semibold px-2.5 py-1 bg-amber-500/10 text-amber-400 rounded-full border border-amber-500/20">智能记忆</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">4. OpenViking Memory 跨会话持久记忆</h3>
+                        <p class="mt-3 text-slate-400 text-sm leading-relaxed">
+                            打破会话隔离，为 Harness 注入持久化记忆基础设施。自动召回项目架构决策、开发偏好与历史经验，使长周期研发更加连贯。
+                        </p>
+                    </div>
+                    <div class="mt-8 pt-4 border-t border-dark-border flex items-center justify-between font-mono text-xs text-indigo-300">
+                        <span>dsh plugin add @openviking/memory-bundle</span>
+                        <button onclick="copyCode('dsh plugin add @openviking/memory-bundle')" class="text-slate-400 hover:text-white transition"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+
+                <!-- Plugin 5 -->
+                <div class="plugin-card p-8 rounded-2xl bg-dark-card border border-dark-border card-hover flex flex-col justify-between" data-name="modlens 多模态视觉理解">
+                    <div>
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-eye"></i>
+                            </div>
+                            <span class="text-xs font-semibold px-2.5 py-1 bg-purple-500/10 text-purple-400 rounded-full border border-purple-500/20">多模态</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">5. ModLens 多模态视觉理解插件</h3>
+                        <p class="mt-3 text-slate-400 text-sm leading-relaxed">
+                            通过接入视觉后端，为智能体赋予强大的图片读取与 UI 审查能力。支持上传截图、分析前端布局并生成精准修改建议。
+                        </p>
+                    </div>
+                    <div class="mt-8 pt-4 border-t border-dark-border flex items-center justify-between font-mono text-xs text-indigo-300">
+                        <span>dsh plugin add @liustack/modlens</span>
+                        <button onclick="copyCode('dsh plugin add @liustack/modlens')" class="text-slate-400 hover:text-white transition"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+
+                <!-- Plugin 6 -->
+                <div class="plugin-card p-8 rounded-2xl bg-dark-card border border-dark-border card-hover flex flex-col justify-between" data-name="dsh-sandbox-docker 容器沙箱安全隔离">
+                    <div>
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-box-archive"></i>
+                            </div>
+                            <span class="text-xs font-semibold px-2.5 py-1 bg-cyan-500/10 text-cyan-400 rounded-full border border-cyan-500/20">安全隔离</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">6. dsh-sandbox-docker 容器沙箱</h3>
+                        <p class="mt-3 text-slate-400 text-sm leading-relaxed">
+                            提供基于 Docker 的安全隔离执行环境。智能体运行高危命令或测试脚本时，自动在隔离沙箱中执行，保障宿主机系统安全。
+                        </p>
+                    </div>
+                    <div class="mt-8 pt-4 border-t border-dark-border flex items-center justify-between font-mono text-xs text-indigo-300">
+                        <span>dsh plugin add @dsh/sandbox-docker</span>
+                        <button onclick="copyCode('dsh plugin add @dsh/sandbox-docker')" class="text-slate-400 hover:text-white transition"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+
+                <!-- Plugin 7 -->
+                <div class="plugin-card p-8 rounded-2xl bg-dark-card border border-dark-border card-hover flex flex-col justify-between" data-name="dsh-subagents-bridge 多模型子智能体桥接">
+                    <div>
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="w-12 h-12 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-users-gear"></i>
+                            </div>
+                            <span class="text-xs font-semibold px-2.5 py-1 bg-rose-500/10 text-rose-400 rounded-full border border-rose-500/20">多智能体</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">7. dsh-subagents-bridge 子智能体桥接</h3>
+                        <p class="mt-3 text-slate-400 text-sm leading-relaxed">
+                            允许将 Claude Code、Codex 等其他外部 AI Harness 作为子插件接入，构建由 DeepSeek 统筹的多智能体协作流水线。
+                        </p>
+                    </div>
+                    <div class="mt-8 pt-4 border-t border-dark-border flex items-center justify-between font-mono text-xs text-indigo-300">
+                        <span>dsh plugin add @dsh/subagents-bridge</span>
+                        <button onclick="copyCode('dsh plugin add @dsh/subagents-bridge')" class="text-slate-400 hover:text-white transition"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+
+                <!-- Plugin 8 -->
+                <div class="plugin-card p-8 rounded-2xl bg-dark-card border border-dark-border card-hover flex flex-col justify-between" data-name="dsh-git-flow Git 高级工作流与PR管理">
+                    <div>
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="w-12 h-12 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-code-commit"></i>
+                            </div>
+                            <span class="text-xs font-semibold px-2.5 py-1 bg-orange-500/10 text-orange-400 rounded-full border border-orange-500/20">版本控制</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">8. dsh-git-flow Git 智能管理插件</h3>
+                        <p class="mt-3 text-slate-400 text-sm leading-relaxed">
+                            自动化处理分支创建、智能 Commit 消息生成、冲突检测与 Pull Request 提交流程，让智能体深度参与团队 Git 规范。
+                        </p>
+                    </div>
+                    <div class="mt-8 pt-4 border-t border-dark-border flex items-center justify-between font-mono text-xs text-indigo-300">
+                        <span>dsh plugin add @dsh/git-flow</span>
+                        <button onclick="copyCode('dsh plugin add @dsh/git-flow')" class="text-slate-400 hover:text-white transition"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+
+                <!-- Plugin 9 -->
+                <div class="plugin-card p-8 rounded-2xl bg-dark-card border border-dark-border card-hover flex flex-col justify-between" data-name="dsh-telemetry-metrics Token 成本与用量监控">
+                    <div>
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="w-12 h-12 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-chart-line"></i>
+                            </div>
+                            <span class="text-xs font-semibold px-2.5 py-1 bg-teal-500/10 text-teal-400 rounded-full border border-teal-500/20">监控分析</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">9. dsh-telemetry-metrics 成本分析面板</h3>
+                        <p class="mt-3 text-slate-400 text-sm leading-relaxed">
+                            实时追踪每次会话、每个工具调用的 Token 消耗、API 延迟与费用开销，提供直观的可视化图表，帮助开发者优化提示词与成本。
+                        </p>
+                    </div>
+                    <div class="mt-8 pt-4 border-t border-dark-border flex items-center justify-between font-mono text-xs text-indigo-300">
+                        <span>dsh plugin add @dsh/telemetry-metrics</span>
+                        <button onclick="copyCode('dsh plugin add @dsh/telemetry-metrics')" class="text-slate-400 hover:text-white transition"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+
+                <!-- Plugin 10 -->
+                <div class="plugin-card p-8 rounded-2xl bg-dark-card border border-dark-border card-hover flex flex-col justify-between" data-name="dsh-theme-matrix 赛博朋克与高级主题">
+                    <div>
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="w-12 h-12 rounded-xl bg-pink-500/10 border border-pink-500/20 text-pink-400 flex items-center justify-center text-xl">
+                                <i class="fa-solid fa-palette"></i>
+                            </div>
+                            <span class="text-xs font-semibold px-2.5 py-1 bg-pink-500/10 text-pink-400 rounded-full border border-pink-500/20">个性美化</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">10. dsh-theme-matrix 主题矩阵</h3>
+                        <p class="mt-3 text-slate-400 text-sm leading-relaxed">
+                            为 Web UI 带来丰富的主题定制能力，包括赛博朋克霓虹、极简北欧暗夜、高对比度终端绿等多种精美视觉方案，打造沉浸式编码氛围。
+                        </p>
+                    </div>
+                    <div class="mt-8 pt-4 border-t border-dark-border flex items-center justify-between font-mono text-xs text-indigo-300">
+                        <span>dsh plugin add @dsh/theme-matrix</span>
+                        <button onclick="copyCode('dsh plugin add @dsh/theme-matrix')" class="text-slate-400 hover:text-white transition"><i class="fa-regular fa-copy"></i></button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- Runtime Modes Section -->
+    <section id="modes" class="py-20 bg-dark-bg border-b border-dark-border">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center max-w-3xl mx-auto mb-16">
+                <span class="text-brand-400 text-sm font-semibold tracking-wider uppercase">Runtime Profiles</span>
+                <h2 class="text-3xl sm:text-4xl font-bold tracking-tight mt-2">四大核心运行模式</h2>
+                <p class="mt-4 text-slate-400">DeepSeek Harness 内置四种预设模式，适配从日常编码到定制智能体开发的各种场景。</p>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="p-6 rounded-2xl bg-dark-card border border-dark-border">
+                    <div class="text-brand-400 text-lg font-bold mb-2">Standard 模式</div>
+                    <p class="text-slate-400 text-sm">标准的智能体编码助手配置，平衡了工具访问与自主性，适合日常全栈开发与 Bug 修复。</p>
+                </div>
+                <div class="p-6 rounded-2xl bg-dark-card border border-dark-border">
+                    <div class="text-indigo-400 text-lg font-bold mb-2">PTC 模式</div>
+                    <p class="text-slate-400 text-sm">针对复杂重构与架构规划优化，赋予模型深度推理与多步计划验证能力。</p>
+                </div>
+                <div class="p-6 rounded-2xl bg-dark-card border border-dark-border">
+                    <div class="text-emerald-400 text-lg font-bold mb-2">Minimal 模式</div>
+                    <p class="text-slate-400 text-sm">极致轻量化，仅保留基础 bash 和文件编辑器工具，最适合基准测试与模型效果评估。</p>
+                </div>
+                <div class="p-6 rounded-2xl bg-dark-card border border-dark-border">
+                    <div class="text-amber-400 text-lg font-bold mb-2">Creator 模式</div>
+                    <p class="text-slate-400 text-sm">面向智能体构建者的扩展模式，允许自由组装新插件、调试底层 Cordis 内核事件与服务。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-dark-bg py-12 text-slate-500 text-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
+            <div class="flex items-center space-x-3">
+                <div class="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white font-bold">DS</div>
+                <span class="text-slate-300 font-semibold">DeepSeek Harness Guide</span>
+            </div>
+            <div>
+                <p>基于 MIT 协议开源 • 开发者预览版指南</p>
+            </div>
+            <div class="flex space-x-6 text-slate-400">
+                <a href="https://github.com/deepseek-ai/deepseek-harness" target="_blank" class="hover:text-white transition"><i class="fa-brands fa-github text-lg"></i></a>
+                <a href="https://deepseek-harness.github.io/deepseek-harness/" target="_blank" class="hover:text-white transition"><i class="fa-solid fa-book text-lg"></i></a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Interactive Scripts -->
+    <script>
+        // Copy Code Function with Toast Notification
+        function copyCode(text) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showToast('命令已复制到剪贴板！');
+                }).catch(() => {
+                    fallbackCopy(text);
+                });
+            } else {
+                fallbackCopy(text);
+            }
+        }
+
+        function fallbackCopy(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                showToast('命令已复制到剪贴板！');
+            } catch (err) {
+                showToast('复制失败，请手动复制');
+            }
+            document.body.removeChild(textarea);
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-msg');
+            toastMsg.innerText = msg;
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 2500);
+        }
+
+        // Plugin Search Filter Function
+        function filterPlugins() {
+            const input = document.getElementById('pluginSearch').value.toLowerCase();
+            const cards = document.querySelectorAll('.plugin-card');
+
+            cards.forEach(card => {
+                const name = card.getAttribute('data-name').toLowerCase();
+                const text = card.innerText.toLowerCase();
+                if (name.includes(input) || text.includes(input)) {
+                    card.style.display = 'flex';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+    </script>
+</body>
+</html>
